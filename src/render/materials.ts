@@ -30,7 +30,18 @@ export function makeMaterials(scene: Scene) {
     stem: mat('stem', '#2e5f68'),
     rock: mat('rock', '#3b3266'),
     leaf: mat('leaf', '#2fbf8a', { em: '#0d3a2a' }),
-    road: mat('road', '#7b84a3', { spec: '#222633', em: '#1c2236' }),
+    wood: mat('wood', '#9a6a43', { em: '#1e1108' }),
+    bark: mat('bark', '#6b4329', { em: '#140a04' }),
+    roof: mat('roof', '#4f3d73', { em: '#120b22' }),
+    stone: mat('stone', '#8f93a8', { em: '#14161f' }),
+    rust: mat('rust', '#b5582c', { em: '#3a1406', spec: '#553322' }),
+    ice: mat('ice', '#cdefff', { em: '#2f7591', alpha: 0.88, spec: '#ffffff' }),
+    furnace: mat('furnace', '#ffb070', { em: '#ff6a1a' }),
+    crop: mat('crop', '#5fe08c', { em: '#1f7a43' }),
+    white: mat('white', '#e9eef7', { spec: '#ffffff' }),
+    canopyA: mat('canopyA', '#3fe6cf', { em: '#128a7e' }),
+    canopyB: mat('canopyB', '#ff7ad9', { em: '#952f7a' }),
+    road: mat('road', '#646d8c', { spec: '#1a1d28', em: '#151a2a' }),
     roadEdge: mat('roadEdge', '#53f0e0', { em: '#1e9c90' }),
     scaffold: (() => {
       const m = mat('scaffold', '#53f0e0', { em: '#53f0e0' });
@@ -40,6 +51,7 @@ export function makeMaterials(scene: Scene) {
     ghostOk: mat('ghostOk', '#4fd18a', { em: '#2f8f5a', alpha: 0.45 }),
     ghostBad: mat('ghostBad', '#ff6b5e', { em: '#8f2f2a', alpha: 0.45 }),
     select: mat('select', '#ffb547', { em: '#ffb547' }),
+    radius: mat('radius', '#53f0e0', { em: '#53f0e0', alpha: 0.55 }),
     moon: mat('moon', '#e9d6ff', { em: '#9d86c9', noFog: true }),
     moon2: mat('moon2', '#ffc79a', { em: '#c48356', noFog: true }),
     sky: (() => {

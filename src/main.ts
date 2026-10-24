@@ -1,8 +1,10 @@
 import './style.css';
 import { World } from './render/world';
 import { BUILDINGS, type BuildingType } from './sim/config';
-import { advance, buildRoadLine, canPlace, placeBuilding, removeRoad, speedUp, startUpgrade } from './sim/game';
-import { SAVE_KEY, deserialize, serialize } from './sim/save';
+import { advance, bestSpot, canPlace, demolish, placeBuilding, speedUp, startUpgrade, togglePause } from './sim/game';
+import { connected } from './sim/path';
+import { buildRoad, connectRoad, removeRoad, snapRoadTile } from './sim/roads';
+import { OLD_SAVE_KEYS, SAVE_KEY, deserialize, serialize } from './sim/save';
 import { byId, createGame, hub, type GameState } from './sim/state';
 import { Hud, type UiState } from './ui/hud';
 
@@ -10,6 +12,7 @@ const SEED = 1;
 
 function load(): GameState {
   try {
+    for (const k of OLD_SAVE_KEYS) localStorage.removeItem(k);
     const saved = deserialize(localStorage.getItem(SAVE_KEY));
     if (saved) return saved;
   } catch {
@@ -29,40 +32,38 @@ function save(s: GameState) {
 let state = load();
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const world = new World(canvas, state);
-const ui: UiState = { mode: { kind: 'view' }, selected: null, goalsMin: window.innerWidth < 700, settings: false, confirmReset: false };
+const ui: UiState = { mode: { kind: 'view' }, selected: null, goalsMin: window.innerWidth < 700, settings: false, confirmReset: false, confirmDemolish: false };
 const hud = new Hud(document.getElementById('hud')!, act);
 
-if (canvas.clientHeight > canvas.clientWidth) world.camera.radius = 72;
-if (state.buildings.length === 1) {
+const hubCentre = () => {
   const h = hub(state);
-  world.focus(h.x + 1.5, h.y + 1.5);
+  return { x: h.x + 1.5, y: h.y + 1.5 };
+};
+if (canvas.clientHeight > canvas.clientWidth) world.camera.radius = 82;
+world.focus(hubCentre().x, hubCentre().y);
+
+/** Best spot for a new building near the middle of the screen. */
+function suggestSpot(type: BuildingType) {
+  const centre = world.pick(canvas.clientWidth / 2, canvas.clientHeight / 2, true).tile ?? hubCentre();
+  const size = BUILDINGS[type].size;
+  return bestSpot(state, type, centre) ?? { x: Math.max(0, Math.round(centre.x - size / 2)), y: Math.max(0, Math.round(centre.y - size / 2)) };
 }
 
-/** Best spot for a new building: the valid one closest to the middle of the screen. */
-function suggestSpot(type: BuildingType) {
-  const size = BUILDINGS[type].size;
-  const centre = world.pick(canvas.clientWidth / 2, canvas.clientHeight / 2).tile ?? { x: state.size / 2, y: state.size / 2 };
-  let best: { x: number; y: number; d: number } | null = null;
-  for (let y = 0; y <= state.size - size; y++) {
-    for (let x = 0; x <= state.size - size; x++) {
-      if (!canPlace(state, type, x, y).ok) continue;
-      const d = Math.hypot(x + size / 2 - centre.x, y + size / 2 - centre.y);
-      if (!best || d < best.d) best = { x, y, d };
-    }
-  }
-  return best ?? { x: Math.max(0, Math.round(centre.x - size / 2)), y: Math.max(0, Math.round(centre.y - size / 2)) };
+function select(id: number | null) {
+  ui.selected = id;
+  ui.confirmDemolish = false;
 }
 
 function act(action: string, arg?: string) {
-  const now = Date.now();
+  const id = Number(arg);
   switch (action) {
     case 'build':
       ui.mode = ui.mode.kind === 'menu' ? { kind: 'view' } : { kind: 'menu' };
-      ui.selected = null;
+      select(null);
       break;
     case 'road':
       ui.mode = ui.mode.kind === 'road' ? { kind: 'view' } : { kind: 'road', anchor: null, remove: false };
-      ui.selected = null;
+      select(null);
       break;
     case 'road-remove':
       if (ui.mode.kind === 'road') ui.mode = { kind: 'road', anchor: null, remove: !ui.mode.remove };
@@ -74,11 +75,12 @@ function act(action: string, arg?: string) {
     }
     case 'place': {
       if (ui.mode.kind !== 'place') break;
-      const r = placeBuilding(state, ui.mode.type, ui.mode.x, ui.mode.y, now);
+      const r = placeBuilding(state, ui.mode.type, ui.mode.x, ui.mode.y);
       if (r.ok) {
-        hud.toast(`${BUILDINGS[ui.mode.type].name} under construction`);
+        const b = byId(state, r.id)!;
+        hud.toast(connected(state, b) ? `${BUILDINGS[ui.mode.type].name} marked out. Colonists will build it` : 'Marked out. Now give it a road to the Command Hub');
         ui.mode = { kind: 'view' };
-        ui.selected = r.id ?? null;
+        select(b.id);
         save(state);
       } else hud.toast(r.reason);
       break;
@@ -87,19 +89,46 @@ function act(action: string, arg?: string) {
       ui.mode = { kind: 'view' };
       break;
     case 'upgrade': {
-      const r = startUpgrade(state, Number(arg), now);
-      hud.toast(r.ok ? 'Upgrade started' : r.reason);
+      const r = startUpgrade(state, id);
+      hud.toast(r.ok ? 'Upgrade marked out. Colonists will bring the materials' : r.reason);
       if (r.ok) save(state);
       break;
     }
     case 'speedup': {
-      const r = speedUp(state, Number(arg), now);
+      const r = speedUp(state, id);
       hud.toast(r.ok ? 'Finished' : r.reason);
       if (r.ok) save(state);
       break;
     }
+    case 'pause': {
+      const r = togglePause(state, id);
+      if (!r.ok) hud.toast(r.reason);
+      else save(state);
+      break;
+    }
+    case 'connect': {
+      const r = connectRoad(state, id);
+      hud.toast(r.ok ? `Road built · ${r.placed} tile${r.placed === 1 ? '' : 's'}` : r.reason);
+      if (r.ok) save(state);
+      break;
+    }
+    case 'demolish':
+      ui.confirmDemolish = true;
+      break;
+    case 'demolish-cancel':
+      ui.confirmDemolish = false;
+      break;
+    case 'demolish-confirm': {
+      const r = demolish(state, id);
+      hud.toast(r.ok ? 'Demolished' : r.reason);
+      if (r.ok) {
+        select(null);
+        save(state);
+      }
+      break;
+    }
     case 'deselect':
-      ui.selected = null;
+      select(null);
       break;
     case 'goals':
       ui.goalsMin = !ui.goalsMin;
@@ -123,13 +152,11 @@ function act(action: string, arg?: string) {
       }
       location.reload();
       return;
-    case 'recentre': {
-      const h = hub(state);
-      world.focus(h.x + 1.5, h.y + 1.5);
+    case 'recentre':
+      world.focus(hubCentre().x, hubCentre().y);
       break;
-    }
   }
-  hud.render(state, ui, now);
+  hud.render(state, ui);
 }
 
 function onTap(px: number, py: number) {
@@ -149,19 +176,24 @@ function onTap(px: number, py: number) {
       const r = removeRoad(state, hit.tile.x, hit.tile.y);
       if (!r.ok) hud.toast(r.reason);
       else save(state);
-    } else if (!m.anchor) {
-      ui.mode = { ...m, anchor: hit.tile };
     } else {
-      const r = buildRoadLine(state, m.anchor, hit.tile);
-      hud.toast(r.ok ? `Road built · ${r.placed} tile${r.placed === 1 ? '' : 's'}` : r.reason);
-      if (r.ok) save(state);
-      ui.mode = { ...m, anchor: hit.tile };
+      const tile = snapRoadTile(state, hit.tile, m.anchor);
+      if (!tile) hud.toast("A road can't go there");
+      else if (!m.anchor) ui.mode = { ...m, anchor: tile };
+      else {
+        const r = buildRoad(state, m.anchor, tile);
+        hud.toast(r.ok ? `Road built · ${r.placed} tile${r.placed === 1 ? '' : 's'}` : r.reason);
+        if (r.ok) {
+          save(state);
+          ui.mode = { ...m, anchor: tile };
+        }
+      }
     }
   } else {
     ui.mode = { kind: 'view' };
-    ui.selected = hit.buildingId ?? null;
+    select(hit.buildingId ?? null);
   }
-  hud.render(state, ui, Date.now());
+  hud.render(state, ui);
 }
 
 // Taps vs. camera drags: a tap is a short press that barely moves, with one finger.
@@ -192,17 +224,24 @@ let lastSave = Date.now();
 world.engine.runRenderLoop(() => {
   const now = Date.now();
   advance(state, now);
-  world.sync(state, now);
+  world.sync(state);
   const m = ui.mode;
-  if (m.kind === 'place') world.setGhost(m.type, m.x, m.y, canPlace(state, m.type, m.x, m.y).ok);
-  else world.setGhost(null);
+  const selected = m.kind === 'view' && ui.selected != null ? byId(state, ui.selected) ?? null : null;
+  if (ui.selected != null && !byId(state, ui.selected)) select(null);
+  if (m.kind === 'place') {
+    world.setGhost(m.type, m.x, m.y, canPlace(state, m.type, m.x, m.y).ok);
+    world.setRadius(m.type, m.x, m.y, 1);
+  } else {
+    world.setGhost(null);
+    world.setRadius(selected?.type ?? null, selected?.x, selected?.y, selected?.level);
+  }
   world.setAnchor(m.kind === 'road' && !m.remove ? m.anchor : null);
-  world.setSelected(ui.mode.kind === 'view' && ui.selected != null ? byId(state, ui.selected) ?? null : null);
+  world.setSelected(selected);
   world.scene.render();
   hud.placeLabels(world);
   if (now - lastHud > 250) {
     lastHud = now;
-    hud.render(state, ui, now);
+    hud.render(state, ui);
   }
   if (now - lastSave > 5000) {
     lastSave = now;
@@ -216,4 +255,15 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', () => save(state));
 
 // Handy for debugging from the browser console.
-Object.assign(window, { tw: { get state() { return state; }, set state(v: GameState) { state = v; }, world, ui } });
+Object.assign(window, {
+  tw: {
+    get state() {
+      return state;
+    },
+    set state(v: GameState) {
+      state = v;
+    },
+    world,
+    ui,
+  },
+});
