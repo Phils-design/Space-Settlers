@@ -57,6 +57,41 @@ function goodsRow(bag: Bag, have?: Bag) {
     .join('');
 }
 
+/**
+ * Updates `el` to match `html`, reusing the elements already there. Swapping in fresh elements
+ * on every refresh would jump scrolled lists back to the top and drop taps that land mid-refresh.
+ * Elements with a different `data-key` are swapped, not reused.
+ */
+function morph(el: Node, html: string) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  patchChildren(el, tpl.content);
+}
+
+function patchChildren(to: Node, from: Node) {
+  const want = Array.from(from.childNodes);
+  want.forEach((next, i) => {
+    const cur = to.childNodes[i];
+    if (!cur) to.appendChild(next);
+    else if (!sameKind(cur, next)) to.replaceChild(next, cur);
+    else if (cur instanceof Element) {
+      patchAttributes(cur, next as Element);
+      patchChildren(cur, next);
+    } else if (cur.nodeValue !== next.nodeValue) cur.nodeValue = next.nodeValue;
+  });
+  while (to.childNodes.length > want.length) to.lastChild!.remove();
+}
+
+function sameKind(a: Node, b: Node) {
+  if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) return false;
+  return !(a instanceof Element) || a.getAttribute('data-key') === (b as Element).getAttribute('data-key');
+}
+
+function patchAttributes(to: Element, from: Element) {
+  for (const { name } of Array.from(to.attributes)) if (!from.hasAttribute(name)) to.removeAttribute(name);
+  for (const { name, value } of Array.from(from.attributes)) if (to.getAttribute(name) !== value) to.setAttribute(name, value);
+}
+
 interface LabelInfo {
   id: number;
   tx: number;
@@ -99,7 +134,7 @@ export class Hud {
   private set(el: HTMLElement, html: string) {
     if (this.cache.get(el) === html) return;
     this.cache.set(el, html);
-    el.innerHTML = html;
+    morph(el, html);
   }
 
   toast(msg: string) {
@@ -224,7 +259,7 @@ export class Hud {
         <small>${locked ? `${ICON.lock} Command Hub ${d.unlock}` : blocked ? blocked : d.blurb}</small>
         <span class="cost">${goodsRow(d.levels[0].cost, s.stock)}<span class="count">${locked ? '' : `${count}/${max}`}</span></span></button>`;
     }).join('');
-    return `<div class="sheet"><header><h2>Build</h2><span>${st.free} of ${st.colonists} colonists free</span></header>
+    return `<div class="sheet" data-key="sheet"><header><h2>Build</h2><span>${st.free} of ${st.colonists} colonists free</span></header>
       <p class="hint">Colonists carry the materials and build it. Nothing is spent until they do.</p>
       <div class="cards">${cards}</div></div>`;
   }
@@ -290,7 +325,7 @@ export class Hud {
     const roadBtn = needsRoad ? `<button class="btn teal" data-action="connect" data-arg="${b.id}">${ICON.link} Build road to Hub</button>` : '';
 
     if (ui.confirmDemolish) {
-      return `<div class="panel">${head}<p class="blurb">${
+      return `<div class="panel" data-key="panel-${b.id}">${head}<p class="blurb">${
         b.site ? 'Cancel this build? Materials already delivered go back to storage.' : `Demolish this ${d.name}? Nothing is refunded, but goods waiting inside go back to storage.`
       }</p><div class="actions"><button class="btn ghost" data-action="demolish-cancel">Keep it</button><button class="btn danger" data-action="demolish-confirm" data-arg="${b.id}">${
         b.site ? 'Cancel build' : 'Demolish'
@@ -317,7 +352,7 @@ export class Hud {
         })
         .join('');
       const blocked = speedUpBlocker(s, b);
-      return `<div class="panel">${head}
+      return `<div class="panel" data-key="panel-${b.id}">${head}
         <div class="timer"><div class="row"><span>${b.level ? `Upgrading to level ${site.toLevel}` : 'Building'} · ${label}</span><b>${fmtTime(site.total - site.work)}</b></div><div class="progress"><i style="width:${p.toFixed(1)}%"></i></div></div>
         ${mats ? `<div class="mats">${mats}</div>` : ''}
         ${warns}
@@ -379,7 +414,7 @@ export class Hud {
     if (b.type !== 'hub') btns.push(`<button class="btn ghost icon" data-action="demolish" data-arg="${b.id}" aria-label="Demolish">${ICON.trash}</button>`);
     if (b.type === 'hub') action += `<p class="hint">Each level unlocks new buildings, lets you have more of them, and pushes your border out.</p>`;
     if (b.level >= d.levels.length) action += `<p class="hint">Max level for this prototype.</p>`;
-    return `<div class="panel">${head}
+    return `<div class="panel" data-key="panel-${b.id}">${head}
       <p class="blurb">${d.blurb}</p>
       ${facts.length ? `<div class="facts">${facts.join('')}</div>` : ''}
       ${work}
