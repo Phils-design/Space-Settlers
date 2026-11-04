@@ -50,7 +50,7 @@ export function release(s: GameState, c: Colonist) {
 }
 
 function walk(c: Colonist, dt: number): boolean {
-  let budget = (c.offRoad ? CONFIG.offRoadSpeed : CONFIG.roadSpeed) * dt;
+  let budget = (c.offRoad ? CONFIG.offRoadSpeed : CONFIG.roadSpeed) * CONFIG.suitSpeed * dt;
   while (budget > 0 && c.path.length) {
     const t = c.path[0];
     const dx = t.x - c.x;
