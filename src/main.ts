@@ -1,7 +1,7 @@
 import './style.css';
 import { World } from './render/world';
 import { BUILDINGS, type BuildingType } from './sim/config';
-import { advance, bestSpot, canPlace, demolish, hubLevel, placeBuilding, speedUp, startUpgrade, togglePause } from './sim/game';
+import { advance, bestSpot, canPlace, cancelSite, demolish, hubLevel, placeBuilding, speedUp, startUpgrade, togglePause } from './sim/game';
 import { connected } from './sim/path';
 import { buildRoad, connectRoad, removeRoad, snapRoadTile } from './sim/roads';
 import { OLD_SAVE_KEYS, SAVE_KEY, deserialize, serialize } from './sim/save';
@@ -161,10 +161,13 @@ function act(action: string, arg?: string) {
       ui.confirmDemolish = false;
       break;
     case 'demolish-confirm': {
-      const r = demolish(state, id);
-      hud.toast(r.ok ? 'Demolished' : r.reason);
+      const b = byId(state, id);
+      const upgrade = !!b?.site && b.level > 0;
+      const r = b?.site ? cancelSite(state, id) : demolish(state, id);
+      hud.toast(r.ok ? (upgrade ? 'Upgrade cancelled. Materials are back in storage' : b?.site ? 'Build cancelled' : 'Demolished') : r.reason);
       if (r.ok) {
-        select(null);
+        ui.confirmDemolish = false;
+        if (!upgrade) select(null);
         save(state);
       }
       break;
