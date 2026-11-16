@@ -156,3 +156,50 @@ button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .menu p { margin: 0; color: var(--muted); }
 .menu .version { font-family: var(--f-mono); font-size: 11px; opacity: 0.8; }
 @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
+/* Bugs and ideas */
+.iconbtn.dot, .btn.dot { position: relative; }
+.iconbtn.dot::after, .btn.dot::after { content: ''; position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 2px var(--space); }
+.menu .btn.wide { width: 100%; }
+.menu.fb { width: min(380px, calc(100vw - 16px - var(--safe-l) - var(--safe-r))); max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 150px); overflow: auto; overscroll-behavior: contain; gap: 10px; }
+.fb header { display: flex; align-items: center; justify-content: space-between; }
+.fb .x { background: none; border: 0; color: var(--muted); font-size: 22px; line-height: 1; padding: 0 4px; }
+.fb .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: #0a0e1a; border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
+.fb .seg button { border: 0; background: none; border-radius: 9px; padding: 8px; font-family: var(--f-display); font-weight: 600; color: var(--muted); }
+.fb .seg button.on { background: var(--amber); color: #1a1205; }
+.fb .field { display: grid; gap: 4px; color: var(--ink); font-weight: 500; }
+.fb .field small { color: var(--muted); font-weight: 400; }
+.fb textarea, .fb input:not([type='checkbox']) { width: 100%; font: 16px/1.4 var(--f-body); color: var(--ink); background: #0a0e1a; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; -webkit-user-select: text; user-select: text; resize: vertical; }
+.fb textarea:focus, .fb input:focus { outline: none; border-color: var(--amber); }
+.fb textarea::placeholder, .fb input::placeholder { color: #93a0bd99; }
+.fb .check { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start; color: var(--muted); }
+.fb .check input { margin: 2px 0 0; accent-color: var(--amber); width: 16px; height: 16px; }
+.fb .fb-msg:empty { display: none; }
+.fb .fb-msg { color: var(--teal); }
+.fb .fb-msg.bad { color: var(--red); }
+.fb .fb-dev-on { color: var(--violet); }
+.fb .actions .btn { width: 100%; }
+.fb .link { background: none; border: 0; padding: 2px 0; color: var(--teal); font-size: 12.5px; text-align: left; }
+.fb .fb-head { display: flex; align-items: baseline; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 10px; }
+.fb h3 { margin: 0; font-family: var(--f-display); font-size: 14px; }
+.fb .fb-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.fb .fb-list li { background: #0a0e1a; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: grid; gap: 4px; }
+.fb .fb-list li.news { border-color: var(--amber); }
+.fb .fb-list li.fb-note { background: none; border: 0; padding: 0; color: var(--muted); font-size: 12px; }
+.fb .fb-top { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.fb .fb-top small { margin-left: auto; color: var(--muted); font-family: var(--f-mono); font-size: 11px; }
+.fb .tag { font-family: var(--f-display); font-weight: 600; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; border-radius: 6px; padding: 1px 6px; }
+.fb .tag.bug { background: #ff6b5e26; color: var(--red); }
+.fb .tag.idea { background: #4fd1c526; color: var(--teal); }
+.fb .st { color: var(--muted); }
+.fb .st.ok { color: var(--amber); }
+.fb .st.done { color: var(--teal); }
+.fb .fb-text { color: var(--ink) !important; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.fb .fb-ship, .fb .fb-re { font-size: 12.5px; overflow-wrap: anywhere; }
+.fb .fb-ship b { color: var(--teal); margin-right: 4px; }
+.fb .fb-re b { color: var(--amber); margin-right: 4px; }
+.fb details { border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 8px; }
+.fb summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.fb details[open] > * + * { margin-top: 8px; }
+.fb .fb-dev-row { display: flex; gap: 6px; }
+.fb .fb-dev-row input { flex: 1; min-width: 0; }

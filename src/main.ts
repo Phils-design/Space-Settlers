@@ -1,12 +1,14 @@
 import './style.css';
 import { World } from './render/world';
 import { BUILDINGS, type BuildingType } from './sim/config';
-import { advance, bestSpot, canPlace, demolish, placeBuilding, speedUp, startUpgrade, togglePause } from './sim/game';
+import { advance, bestSpot, canPlace, demolish, hubLevel, placeBuilding, speedUp, startUpgrade, togglePause } from './sim/game';
 import { connected } from './sim/path';
 import { buildRoad, connectRoad, removeRoad, snapRoadTile } from './sim/roads';
 import { OLD_SAVE_KEYS, SAVE_KEY, deserialize, serialize } from './sim/save';
 import { byId, createGame, hub, type GameState } from './sim/state';
-import { Hud, type UiState } from './ui/hud';
+import { STORE, getItem, setItem } from './feedback/client';
+import { FeedbackPanel } from './ui/feedback';
+import { Hud, goalStage, type UiState } from './ui/hud';
 
 /** The very first colony on a device always gets the same, tested map. New colonies get a fresh one. */
 const FIRST_SEED = 1;
@@ -30,8 +32,19 @@ function load(): GameState {
   return createGame(seed, Date.now());
 }
 
+/** Seconds played in this colony, sent with bug reports. Kept beside the save, not in it. */
+function loadPlaytime(seed: number): number {
+  try {
+    const p = JSON.parse(getItem(STORE.playtime) || 'null') as { seed: number; sec: number } | null;
+    return p && p.seed === seed && Number.isFinite(p.sec) ? p.sec : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function save(s: GameState) {
   if (resetting) return;
+  setItem(STORE.playtime, JSON.stringify({ seed: s.seed, sec: Math.round(playtime) }));
   try {
     localStorage.setItem(SAVE_KEY, serialize(s));
     ui.savedAt = Date.now();
@@ -44,10 +57,25 @@ function save(s: GameState) {
 }
 
 let state = load();
+let playtime = loadPlaytime(state.seed);
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const world = new World(canvas, state);
 const ui: UiState = { mode: { kind: 'view' }, selected: null, goalsMin: window.innerWidth < 700, settings: false, confirmReset: false, confirmDemolish: false };
-const hud = new Hud(document.getElementById('hud')!, act);
+const hudRoot = document.getElementById('hud')!;
+const hud = new Hud(hudRoot, act);
+const feedback = new FeedbackPanel({
+  diag: () => ({ v: __APP_VERSION__, level: hubLevel(state), stage: goalStage(state), playtime: Math.round(playtime) }),
+  toast: (msg) => hud.toast(msg),
+  close: () => act('feedback-close'),
+  changed: () => {
+    ui.fbUnseen = feedback.unseen;
+    hud.render(state, ui);
+  },
+});
+hudRoot.append(feedback.el);
+ui.fbUnseen = feedback.unseen;
+// See whether earlier reports have news, once the game has settled.
+setTimeout(() => void feedback.refresh(true, true), 4000);
 
 const hubCentre = () => {
   const h = hub(state);
@@ -150,6 +178,14 @@ function act(action: string, arg?: string) {
     case 'settings':
       ui.settings = !ui.settings;
       ui.confirmReset = false;
+      feedback.hide();
+      break;
+    case 'feedback':
+      ui.settings = false;
+      feedback.show();
+      break;
+    case 'feedback-close':
+      feedback.hide();
       break;
     case 'reset':
       ui.confirmReset = true;
@@ -162,6 +198,7 @@ function act(action: string, arg?: string) {
       resetting = true;
       try {
         localStorage.removeItem(SAVE_KEY);
+        localStorage.removeItem(STORE.playtime);
         localStorage.setItem(SEED_KEY, String(2 + Math.floor(Math.random() * 2_000_000_000)));
       } catch {
         /* ignore */
@@ -179,6 +216,7 @@ function onTap(px: number, py: number) {
   const m = ui.mode;
   const hit = world.pick(px, py, m.kind === 'place' || m.kind === 'road');
   ui.settings = false;
+  feedback.hide();
   if (m.kind === 'place') {
     if (hit.tile) {
       const size = BUILDINGS[m.type].size;
@@ -276,8 +314,11 @@ canvas.addEventListener('pointercancel', (e) => {
 
 let lastHud = 0;
 let lastSave = Date.now();
+let lastFrame = Date.now();
 world.engine.runRenderLoop(() => {
   const now = Date.now();
+  if (document.visibilityState === 'visible') playtime += Math.min(1, Math.max(0, (now - lastFrame) / 1000));
+  lastFrame = now;
   advance(state, now);
   world.sync(state);
   const m = ui.mode;
