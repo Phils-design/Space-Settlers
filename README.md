@@ -40,6 +40,10 @@ npm test         # game-rule tests, plus a scripted play-through on several maps
 npm run build    # production build in dist/
 ```
 
+## Hosting
+
+The game is hosted on Netlify (`netlify.toml`): build `npm run build`, publish `dist`. It needs a real site of its own: a claude.ai artifact preview can't reach the feedback console, so reports fail there.
+
 ## Layout
 
 - `src/sim/` game rules with no graphics. Deterministic, so a server can run the same code later.
