@@ -269,6 +269,30 @@ describe('workers', () => {
     expect(s.trees.filter((t) => t === 100).length).toBeGreaterThanOrEqual(planted);
   });
 
+  it('one grove keeper keeps two lumber camps busy', () => {
+    const s = blank();
+    mainRoad(s);
+    startUpgrade(s, hub(s).id);
+    speedUp(s, hub(s).id);
+    built(s, 'lumber', 49, 51);
+    built(s, 'lumber', 55, 51);
+    built(s, 'forester', 52, 51);
+    s.stock = {};
+    // Empty storage as we go, so timber never backs up at the camps.
+    const run = (sec: number) => {
+      for (let t = 0; t < sec; t += 10) {
+        simulate(s, 10);
+        s.stock.timber = 0;
+      }
+    };
+    run(600);
+    const before = s.made.timber ?? 0;
+    run(600);
+    // A busy level 1 woodcutter fells about a tree every 14s (2 timber a trip). Once the grove
+    // has settled, two camps should bring in close to that: over 160 timber in ten minutes.
+    expect((s.made.timber ?? 0) - before).toBeGreaterThan(160);
+  });
+
   it('workplaces always leave colonists free to build and carry', () => {
     const s = blank();
     noSpawning(s);

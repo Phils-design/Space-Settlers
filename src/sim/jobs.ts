@@ -313,8 +313,11 @@ export function treesNear(s: GameState, b: Building, r: number) {
   return n;
 }
 
-/** A free patch of ground for a sapling, keeping clear of roads and buildings. */
-export function findPlantSpot(s: GameState, b: Building, self?: Colonist): number {
+/**
+ * A free patch of ground for a sapling, keeping clear of roads and buildings.
+ * With `near`, it picks the spot closest to that point (the next sapling of a trip) instead of the hut.
+ */
+export function findPlantSpot(s: GameState, b: Building, self?: Colonist, near?: Waypoint): number {
   const d = BUILDINGS[b.type];
   if (!d.plant) return -1;
   const r = lv(d.plant.radius, b.level || 1);
@@ -333,7 +336,8 @@ export function findPlantSpot(s: GameState, b: Building, self?: Colonist): numbe
       const dist = Math.hypot(x + 0.5 - c.x, y + 0.5 - c.y);
       if (dist > r || dist < 2) continue;
       // A little deterministic scatter so groves look natural.
-      const score = dist + (((i * 2654435761) >>> 0) / 4294967296) * 2.5;
+      const from = near ? Math.hypot(x + 0.5 - near.x, y + 0.5 - near.y) : dist;
+      const score = from + (((i * 2654435761) >>> 0) / 4294967296) * 2.5;
       if (score >= bs || (self && isReserved(s, i, self))) continue;
       bs = score;
       best = i;
@@ -406,6 +410,18 @@ function updateWork(s: GameState, c: Colonist, job: Extract<Job, { kind: 'work' 
       } else if (d.plant && !s.trees[i] && !occupancy(s)[i] && !s.roads[i]) {
         s.trees[i] = 1;
         s.natureRev++;
+      }
+      if (d.plant) {
+        // Plant the rest of this trip's saplings nearby before heading home.
+        job.planted = (job.planted ?? 0) + 1;
+        const next = job.planted < d.plant.perTrip ? findPlantSpot(s, b, c, { x: c.x, y: c.y }) : -1;
+        if (next >= 0) {
+          job.node = next;
+          job.stage = 'out';
+          setPath(c, [besideNode(s, next, b)], true);
+          return;
+        }
+        job.planted = 0;
       }
       job.node = -1;
       job.stage = 'back';

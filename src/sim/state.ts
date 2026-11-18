@@ -67,7 +67,7 @@ export type Job =
       /** For site deliveries: the level being built, so a finished site can't be filled twice. */
       siteLevel: number;
     }
-  | { kind: 'work'; at: number; stage: 'go' | 'inside' | 'out' | 'harvest' | 'back'; node: number; timer: number }
+  | { kind: 'work'; at: number; stage: 'go' | 'inside' | 'out' | 'harvest' | 'back'; node: number; timer: number; planted?: number }
   | { kind: 'home'; to: number };
 
 export interface Colonist {
