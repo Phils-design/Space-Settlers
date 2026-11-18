@@ -1,0 +1,33 @@
+{
+  "name": "terraform-wars",
+  "version": "1.0.0",
+  "description": "Terraform Wars: a 3D colony builder for phones",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Phils-design/Space-Settlers.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Phils-design/Space-Settlers/issues"
+  },
+  "homepage": "https://github.com/Phils-design/Space-Settlers#readme",
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "@babylonjs/core": "^8.20.0"
+  },
+  "private": true,
+  "type": "module"
+}
