@@ -164,7 +164,29 @@ export class World {
     this.anchor.setEnabled(false);
 
     scene.onBeforeRenderObservable.add(() => this.animate());
-    window.addEventListener('resize', () => this.engine.resize());
+    this.followScreenSize();
+  }
+
+  /**
+   * Keeps the 3D view matched to the screen. Phones (iOS in particular) report a rotation before
+   * the new size has settled, so one resize on the 'resize' event can leave the picture squashed
+   * or stretched. We also watch the canvas itself and check again once the rotation has finished.
+   */
+  private followScreenSize() {
+    let timers: number[] = [];
+    // Babylon only reallocates when the size has actually changed, so calling this often is cheap.
+    const fit = () => this.engine.resize();
+    const settle = () => {
+      // Rotation can leave the page scrolled or zoomed; put it back where the game expects it.
+      window.scrollTo(0, 0);
+      fit();
+      timers.forEach(clearTimeout);
+      timers = [100, 300, 700].map((ms) => window.setTimeout(fit, ms));
+    };
+    window.addEventListener('resize', settle);
+    window.addEventListener('orientationchange', settle);
+    window.visualViewport?.addEventListener('resize', settle);
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(fit).observe(this.canvas);
   }
 
   // ---------- coordinates ----------
