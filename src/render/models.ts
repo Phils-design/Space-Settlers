@@ -406,7 +406,60 @@ export function colonistParts(scene: Scene, m: Materials) {
     tank: hide(MeshBuilder.CreateCapsule('tank', { height: 0.36, radius: 0.06, tessellation: 8 }, scene), m.metal),
     antenna: hide(MeshBuilder.CreateCylinder('antenna', { height: 0.26, diameter: 0.018, tessellation: 4 }, scene), m.metal),
     tip: hide(MeshBuilder.CreateSphere('tip', { diameter: 0.05, segments: 4 }, scene), m.trim),
+    // Hand tools. Handles run along -y from the grip; heads sit at the far end.
+    handle: hide(MeshBuilder.CreateCylinder('handle', { height: 1, diameter: 0.045, tessellation: 6 }, scene), m.bark),
+    blade: hide(MeshBuilder.CreateBox('blade', { width: 1, height: 1, depth: 1 }, scene), m.metal),
+    toolGrip: hide(MeshBuilder.CreateBox('toolGrip', { width: 1, height: 1, depth: 1 }, scene), m.trim),
+    hammerHead: hide(MeshBuilder.CreateBox('hammerHead', { width: 1, height: 1, depth: 1 }, scene), m.dark),
   };
+}
+
+export type ToolKind = 'axe' | 'pick' | 'spade' | 'hammer';
+
+/** How far each tool tilts forward from the forearm in the hand: swung tools reach ahead, a spade points at the ground. */
+export const TOOL_GRIP: Record<ToolKind, number> = { axe: 0.6, pick: 0.6, spade: -0.7, hammer: 0.4 };
+
+/**
+ * A hand tool for a colonist, held in the right glove. The node's -y axis runs down the handle,
+ * and the working edge faces -x, the way the tool moves on a downward swing.
+ */
+export function toolModel(scene: Scene, parts: ColonistParts, kind: ToolKind): TransformNode {
+  const root = new TransformNode('tool-' + kind, scene);
+  const add = (src: Mesh, pos: Vector3, scale: Vector3, rotZ = 0) => {
+    const inst = src.createInstance('t');
+    inst.parent = root;
+    inst.position = pos;
+    inst.scaling = scale;
+    inst.rotation.z = rotZ;
+    inst.isPickable = false;
+  };
+  const len = kind === 'hammer' ? 0.3 : kind === 'spade' ? 0.62 : 0.5;
+  add(parts.handle, V(0, -len / 2 + 0.06, 0), V(1, len, 1));
+  add(parts.toolGrip, V(0, 0.02, 0), V(0.06, 0.08, 0.06));
+  const end = -len + 0.06;
+  switch (kind) {
+    case 'axe':
+      // A broad wedge on the leading side, a short poll behind.
+      add(parts.blade, V(-0.08, end + 0.03, 0), V(0.16, 0.13, 0.03));
+      add(parts.blade, V(-0.17, end + 0.03, 0), V(0.04, 0.2, 0.025));
+      add(parts.blade, V(0.04, end + 0.03, 0), V(0.07, 0.07, 0.05));
+      break;
+    case 'pick':
+      // A long head swept down at both ends, crossing the handle.
+      add(parts.blade, V(-0.1, end + 0.01, 0), V(0.2, 0.045, 0.04), 0.25);
+      add(parts.blade, V(0.1, end + 0.01, 0), V(0.2, 0.045, 0.04), -0.25);
+      add(parts.hammerHead, V(0, end + 0.03, 0), V(0.07, 0.08, 0.07));
+      break;
+    case 'spade':
+      // A flat blade carrying on from the handle, with a T-grip at the top.
+      add(parts.blade, V(0, end - 0.08, 0), V(0.02, 0.2, 0.16));
+      add(parts.toolGrip, V(0, 0.06, 0), V(0.04, 0.04, 0.14));
+      break;
+    case 'hammer':
+      add(parts.hammerHead, V(-0.02, end + 0.02, 0), V(0.14, 0.08, 0.08));
+      break;
+  }
+  return root;
 }
 
 export type ColonistParts = ReturnType<typeof colonistParts>;

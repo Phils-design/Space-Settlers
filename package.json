@@ -1,6 +1,6 @@
 {
   "name": "terraform-wars",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Terraform Wars: a 3D colony builder for phones",
   "scripts": {
     "dev": "vite",
