@@ -28,7 +28,7 @@ import { byId, type Building, type GameState } from '../sim/state';
 import { territory } from '../sim/territory';
 import { CameraControls } from './controls';
 import { makeMaterials, type Materials } from './materials';
-import { MODELS, colonistModel, colonistParts, toolModel, TOOL_GRIP, type ColonistParts, type ColonistRig, type ToolKind } from './models';
+import { MODELS, colonistLook, colonistModel, colonistParts, toolModel, TOOL_GRIP, type ColonistParts, type ColonistRig, type ToolKind } from './models';
 
 /** World units per tile. */
 export const TILE = 2;
@@ -135,7 +135,7 @@ export class World {
     this.groundTex = g.tex;
     this.props = this.buildProps();
     this.parts = colonistParts(scene, this.m);
-    for (const p of Object.values(this.parts)) this.shadows.addShadowCaster(p);
+    for (const p of Object.values(this.parts).flat()) this.shadows.addShadowCaster(p);
     for (const good of GOODS) {
       const mat = new StandardMaterial('crate-' + good, scene);
       const col = Color3.FromHexString(GOOD_INFO[good].color);
@@ -594,7 +594,7 @@ export class World {
       seen.add(c.id);
       let v = this.colonists.get(c.id);
       if (!v) {
-        const rig = colonistModel(this.scene, this.parts, c.id % 3 === 0);
+        const rig = colonistModel(this.scene, this.parts, colonistLook(c.id));
         rig.root.scaling.setAll(1.65);
         v = { ...rig, lx: c.x, ly: c.y, phase: (c.id * 1.7) % 6 };
         this.colonists.set(c.id, v);

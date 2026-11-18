@@ -1,4 +1,4 @@
-import { Mesh, MeshBuilder, Scene, TransformNode, Vector3 } from '@babylonjs/core';
+import { Color3, Color4, Mesh, MeshBuilder, Scene, StandardMaterial, TransformNode, Vector3, VertexBuffer } from '@babylonjs/core';
 import type { BuildingType } from '../sim/config';
 import type { Materials } from './materials';
 
@@ -375,9 +375,57 @@ export const MODELS: Record<BuildingType, ModelFn> = {
   fabricator,
 };
 
+/** Suit accent colours, one per crew member (cycled). */
+const ACCENTS = ['#f08a3c', '#f2c94c', '#3fe6cf', '#ff6b5e', '#b18cff', '#7be06a', '#5aa9ff', '#ff7ad9'];
+/** Base suit colours: mostly white, with a few grey and sand suits. */
+const SUITS = ['#eef1f6', '#eef1f6', '#d9dee8', '#e9dcc5', '#c8d3e6'];
+
+/** How one colonist looks. Picked from their id, so it stays the same between visits. */
+export interface ColonistLook {
+  accent: Color4;
+  suit: Color4;
+  /** Which visor tint: gold, teal, violet, rose or deep blue. */
+  visor: number;
+  /** Helmet gear: 0 antenna, 1 head lamp, 2 twin antennas, 3 headset mic. */
+  gear: number;
+  /** Life support: 0 twin tanks, 1 one big tank, 2 slim pack with a dish. */
+  pack: number;
+  /** Stripe down the chest, or shoulder pads only. */
+  stripe: boolean;
+  height: number;
+}
+
+const pick = (seed: number, salt: number) => ((((seed + 1) * 2654435761) ^ (salt * 40503 * 2246822519)) >>> 0) / 4294967296;
+const c4 = (hex: string) => {
+  const c = Color3.FromHexString(hex);
+  return new Color4(c.r, c.g, c.b, 1);
+};
+
+export function colonistLook(id: number): ColonistLook {
+  return {
+    accent: c4(ACCENTS[id % ACCENTS.length]),
+    suit: c4(SUITS[Math.floor(pick(id, 1) * SUITS.length)]),
+    visor: Math.floor(pick(id, 2) * VISOR_TINTS.length),
+    gear: Math.floor(pick(id, 3) * 4),
+    pack: Math.floor(pick(id, 4) * 3),
+    stripe: pick(id, 5) < 0.5,
+    height: 0.94 + pick(id, 6) * 0.12,
+  };
+}
+
+/** Visor glass tints: the diffuse colour and the glow inside the helmet. */
+const VISOR_TINTS: [string, string][] = [
+  ['#2a1a06', '#d89a2b'],
+  ['#062a2a', '#2bd9c8'],
+  ['#1a0a2e', '#9d6bff'],
+  ['#2a0a1e', '#ff6bd6'],
+  ['#06122a', '#4f8dff'],
+];
+
 /**
  * Hidden source meshes for colonists. Each colonist is made of instances of these,
- * so dozens of colonists cost a handful of draw calls.
+ * so dozens of colonists cost a handful of draw calls. "Tinted" parts take their colour
+ * from each instance, which is how every colonist gets their own suit and accent colours.
  */
 export function colonistParts(scene: Scene, m: Materials) {
   const hide = (mesh: Mesh, mat: Mesh['material']) => {
@@ -386,32 +434,177 @@ export function colonistParts(scene: Scene, m: Materials) {
     mesh.isPickable = false;
     return mesh;
   };
+  // A white material that each instance colours in.
+  const tintMat = new StandardMaterial('tint', scene);
+  tintMat.diffuseColor = new Color3(1, 1, 1);
+  tintMat.specularColor = new Color3(0.25, 0.25, 0.3);
+  tintMat.emissiveColor = new Color3(0.1, 0.1, 0.13);
+  const tinted = (mesh: Mesh) => {
+    hide(mesh, tintMat);
+    mesh.registerInstancedBuffer(VertexBuffer.ColorKind, 4);
+    mesh.instancedBuffers.color = new Color4(1, 1, 1, 1);
+    return mesh;
+  };
+  const visors = VISOR_TINTS.map(([col, glow], i) => {
+    const mat = new StandardMaterial('visor' + i, scene);
+    mat.diffuseColor = Color3.FromHexString(col);
+    mat.emissiveColor = Color3.FromHexString(glow).scale(0.75);
+    mat.specularColor = new Color3(1, 1, 1);
+    mat.specularPower = 96;
+    return hide(MeshBuilder.CreateSphere('visor' + i, { diameter: 0.36, segments: 12 }, scene), mat);
+  });
   return {
-    torso: hide(MeshBuilder.CreateCapsule('torso', { height: 0.52, radius: 0.19, tessellation: 10 }, scene), m.suitWhite),
-    /** Suit colour bands: chest panel and shoulder pads, orange or yellow by crew. */
-    band: hide(MeshBuilder.CreateBox('band', { width: 0.05, height: 0.16, depth: 0.26 }, scene), m.suit),
-    band2: hide(MeshBuilder.CreateBox('band2', { width: 0.05, height: 0.16, depth: 0.26 }, scene), m.suit2),
-    pad: hide(MeshBuilder.CreateSphere('pad', { diameter: 0.17, segments: 6 }, scene), m.suit),
-    pad2: hide(MeshBuilder.CreateSphere('pad2', { diameter: 0.17, segments: 6 }, scene), m.suit2),
+    // Suit colour
+    torso: tinted(MeshBuilder.CreateCapsule('torso', { height: 0.52, radius: 0.19, tessellation: 12 }, scene)),
+    leg: tinted(MeshBuilder.CreateCapsule('leg', { height: 0.36, radius: 0.08, tessellation: 8 }, scene)),
+    arm: tinted(MeshBuilder.CreateCapsule('arm', { height: 0.32, radius: 0.06, tessellation: 8 }, scene)),
+    helmet: tinted(MeshBuilder.CreateSphere('helmet', { diameter: 0.46, segments: 14 }, scene)),
+    // Accent colour
+    pad: tinted(MeshBuilder.CreateSphere('pad', { diameter: 0.17, segments: 6 }, scene)),
+    stripe: tinted(MeshBuilder.CreateBox('stripe', { width: 0.05, height: 0.36, depth: 0.08 }, scene)),
+    cuff: tinted(MeshBuilder.CreateCylinder('cuff', { height: 0.05, diameter: 0.14, tessellation: 10 }, scene)),
+    knee: tinted(MeshBuilder.CreateSphere('knee', { diameter: 0.12, segments: 6 }, scene)),
+    rim: tinted(MeshBuilder.CreateTorus('rim', { diameter: 0.3, thickness: 0.035, tessellation: 20 }, scene)),
+    earCap: tinted(MeshBuilder.CreateCylinder('earCap', { height: 0.04, diameter: 0.12, tessellation: 12 }, scene)),
+    // Fixed colours
+    visors,
+    glint: hide(MeshBuilder.CreateSphere('glint', { diameter: 0.07, segments: 6 }, scene), m.white),
+    ear: hide(MeshBuilder.CreateCylinder('ear', { height: 0.06, diameter: 0.15, tessellation: 12 }, scene), m.metal),
     belt: hide(MeshBuilder.CreateCylinder('belt', { height: 0.07, diameter: 0.4, tessellation: 12 }, scene), m.dark),
-    chestLight: hide(MeshBuilder.CreateBox('chestLight', { width: 0.03, height: 0.05, depth: 0.08 }, scene), m.cyan),
-    leg: hide(MeshBuilder.CreateCapsule('leg', { height: 0.36, radius: 0.08, tessellation: 8 }, scene), m.suitWhite),
+    buckle: hide(MeshBuilder.CreateBox('buckle', { width: 0.04, height: 0.06, depth: 0.09 }, scene), m.metal),
+    panel: hide(MeshBuilder.CreateBox('panel', { width: 0.04, height: 0.13, depth: 0.15 }, scene), m.dark),
+    lightC: hide(MeshBuilder.CreateBox('lightC', { width: 0.02, height: 0.025, depth: 0.025 }, scene), m.cyan),
+    lightM: hide(MeshBuilder.CreateBox('lightM', { width: 0.02, height: 0.025, depth: 0.025 }, scene), m.mag),
+    lightA: hide(MeshBuilder.CreateBox('lightA', { width: 0.02, height: 0.025, depth: 0.025 }, scene), m.trim),
     boot: hide(MeshBuilder.CreateBox('boot', { width: 0.2, height: 0.09, depth: 0.13 }, scene), m.dark),
-    arm: hide(MeshBuilder.CreateCapsule('arm', { height: 0.32, radius: 0.06, tessellation: 8 }, scene), m.suitWhite),
+    sole: hide(MeshBuilder.CreateBox('sole', { width: 0.21, height: 0.025, depth: 0.14 }, scene), m.metal),
     glove: hide(MeshBuilder.CreateSphere('glove', { diameter: 0.12, segments: 6 }, scene), m.dark),
-    helmet: hide(MeshBuilder.CreateSphere('helmet', { diameter: 0.44, segments: 12 }, scene), m.helmet),
     collar: hide(MeshBuilder.CreateCylinder('collar', { height: 0.07, diameter: 0.3, tessellation: 12 }, scene), m.metal),
-    visor: hide(MeshBuilder.CreateSphere('visor', { diameter: 0.34, segments: 10 }, scene), m.visor),
     pack: hide(MeshBuilder.CreateBox('pack', { width: 0.16, height: 0.4, depth: 0.32 }, scene), m.dark),
+    vent: hide(MeshBuilder.CreateBox('vent', { width: 0.02, height: 0.025, depth: 0.2 }, scene), m.metal),
     tank: hide(MeshBuilder.CreateCapsule('tank', { height: 0.36, radius: 0.06, tessellation: 8 }, scene), m.metal),
+    bigTank: hide(MeshBuilder.CreateCapsule('bigTank', { height: 0.42, radius: 0.1, tessellation: 10 }, scene), m.metal),
+    dish: hide(MeshBuilder.CreateCylinder('dish', { height: 0.02, diameterTop: 0.16, diameterBottom: 0.05, tessellation: 12 }, scene), m.white),
     antenna: hide(MeshBuilder.CreateCylinder('antenna', { height: 0.26, diameter: 0.018, tessellation: 4 }, scene), m.metal),
     tip: hide(MeshBuilder.CreateSphere('tip', { diameter: 0.05, segments: 4 }, scene), m.trim),
+    lamp: hide(MeshBuilder.CreateCylinder('lamp', { height: 0.08, diameter: 0.08, tessellation: 10 }, scene), m.metal),
+    lampLens: hide(MeshBuilder.CreateCylinder('lampLens', { height: 0.012, diameter: 0.065, tessellation: 10 }, scene), m.gold),
+    mic: hide(MeshBuilder.CreateCapsule('mic', { height: 0.2, radius: 0.012, tessellation: 4 }, scene), m.dark),
     // Hand tools. Handles run along -y from the grip; heads sit at the far end.
     handle: hide(MeshBuilder.CreateCylinder('handle', { height: 1, diameter: 0.045, tessellation: 6 }, scene), m.bark),
     blade: hide(MeshBuilder.CreateBox('blade', { width: 1, height: 1, depth: 1 }, scene), m.metal),
     toolGrip: hide(MeshBuilder.CreateBox('toolGrip', { width: 1, height: 1, depth: 1 }, scene), m.trim),
     hammerHead: hide(MeshBuilder.CreateBox('hammerHead', { width: 1, height: 1, depth: 1 }, scene), m.dark),
   };
+}
+
+export type ColonistParts = ReturnType<typeof colonistParts>;
+
+export interface ColonistRig {
+  root: TransformNode;
+  /** Hip and shoulder pivots, swung when walking. Index 0 is the left side. */
+  legs: TransformNode[];
+  arms: TransformNode[];
+}
+
+/**
+ * One astronaut built from instances, about 1.25 units tall. Faces +x: a big tinted visor and
+ * chest panel at the front, life support on the back. Colours and gear come from `look`.
+ */
+export function colonistModel(scene: Scene, parts: ColonistParts, look: ColonistLook): ColonistRig {
+  const root = new TransformNode('colonist', scene);
+  const body = new TransformNode('body', scene);
+  body.parent = root;
+  body.scaling.y = look.height;
+  const add = (src: Mesh, parent: TransformNode, pos: Vector3, scale?: Vector3, rot?: Vector3, color?: Color4) => {
+    const inst = src.createInstance('c');
+    inst.parent = parent;
+    inst.position = pos;
+    if (scale) inst.scaling = scale;
+    if (rot) inst.rotation = rot;
+    if (color) inst.instancedBuffers.color = color;
+    inst.isPickable = false;
+    return inst;
+  };
+  const suit = (src: Mesh, parent: TransformNode, pos: Vector3, scale?: Vector3, rot?: Vector3) => add(src, parent, pos, scale, rot, look.suit);
+  const accent = (src: Mesh, parent: TransformNode, pos: Vector3, scale?: Vector3, rot?: Vector3) => add(src, parent, pos, scale, rot, look.accent);
+  const pivot = (pos: Vector3) => {
+    const n = new TransformNode('pivot', scene);
+    n.parent = body;
+    n.position = pos;
+    return n;
+  };
+
+  // Torso, belt and chest panel.
+  suit(parts.torso, body, V(0, 0.66, 0));
+  add(parts.belt, body, V(0, 0.46, 0));
+  add(parts.buckle, body, V(0.2, 0.46, 0));
+  if (look.stripe) accent(parts.stripe, body, V(0.17, 0.66, -0.07));
+  add(parts.panel, body, V(0.18, 0.66, 0.05));
+  add(parts.lightC, body, V(0.2, 0.69, 0.01));
+  add(parts.lightM, body, V(0.2, 0.69, 0.05));
+  add(parts.lightA, body, V(0.2, 0.69, 0.09));
+  add(parts.collar, body, V(0, 0.9, 0));
+
+  // Helmet: a big tinted visor with a coloured rim, a glint, ear pieces and some gear on top.
+  suit(parts.helmet, body, V(0, 1.07, 0));
+  add(parts.visors[look.visor], body, V(0.135, 1.06, 0), V(0.62, 0.7, 0.92));
+  accent(parts.rim, body, V(0.18, 1.06, 0), V(1, 0.82, 1.05), V(0, 0, Math.PI / 2));
+  add(parts.glint, body, V(0.245, 1.11, 0.07), V(0.4, 0.7, 0.45));
+  for (const side of [-1, 1]) {
+    add(parts.ear, body, V(0, 1.07, side * 0.22), undefined, V(Math.PI / 2, 0, 0));
+    accent(parts.earCap, body, V(0, 1.07, side * 0.25), undefined, V(Math.PI / 2, 0, 0));
+  }
+  switch (look.gear) {
+    case 0:
+      add(parts.antenna, body, V(-0.24, 1.02, -0.1));
+      add(parts.tip, body, V(-0.24, 1.15, -0.1));
+      break;
+    case 1:
+      add(parts.lamp, body, V(0.1, 1.3, 0), V(1, 1.4, 1), V(0, 0, -1.1));
+      add(parts.lampLens, body, V(0.16, 1.325, 0), undefined, V(0, 0, -1.1));
+      break;
+    case 2:
+      for (const side of [-1, 1]) {
+        add(parts.antenna, body, V(-0.05, 1.32, side * 0.12), V(1, 0.6, 1), V(side * 0.3, 0, 0));
+        add(parts.tip, body, V(-0.05, 1.4, side * 0.145));
+      }
+      break;
+    case 3:
+      add(parts.mic, body, V(0.13, 1.0, 0.2), undefined, V(0, 0, Math.PI / 2 - 0.3));
+      break;
+  }
+
+  // Life support on the back.
+  add(parts.pack, body, V(-0.21, 0.7, 0));
+  add(parts.vent, body, V(-0.29, 0.82, 0));
+  add(parts.vent, body, V(-0.29, 0.77, 0));
+  if (look.pack === 0) {
+    add(parts.tank, body, V(-0.3, 0.72, 0.08));
+    add(parts.tank, body, V(-0.3, 0.72, -0.08));
+  } else if (look.pack === 1) {
+    add(parts.bigTank, body, V(-0.33, 0.7, 0));
+  } else {
+    add(parts.dish, body, V(-0.31, 0.62, 0), undefined, V(0, 0, Math.PI / 2));
+  }
+
+  const legs = [-1, 1].map((side) => {
+    const hip = pivot(V(0, 0.44, side * 0.1));
+    suit(parts.leg, hip, V(0, -0.18, 0));
+    accent(parts.knee, hip, V(0.06, -0.2, 0));
+    add(parts.boot, hip, V(0.03, -0.4, 0));
+    add(parts.sole, hip, V(0.03, -0.45, 0));
+    return hip;
+  });
+  const arms = [-1, 1].map((side) => {
+    const shoulder = pivot(V(0, 0.82, side * 0.24));
+    accent(parts.pad, shoulder, V(0, 0.01, 0));
+    suit(parts.arm, shoulder, V(0, -0.15, side * 0.02));
+    accent(parts.cuff, shoulder, V(0, -0.26, side * 0.02));
+    add(parts.glove, shoulder, V(0, -0.32, side * 0.02));
+    return shoulder;
+  });
+  return { root, legs, arms };
 }
 
 export type ToolKind = 'axe' | 'pick' | 'spade' | 'hammer';
@@ -460,62 +653,4 @@ export function toolModel(scene: Scene, parts: ColonistParts, kind: ToolKind): T
       break;
   }
   return root;
-}
-
-export type ColonistParts = ReturnType<typeof colonistParts>;
-
-export interface ColonistRig {
-  root: TransformNode;
-  /** Hip and shoulder pivots, swung when walking. Index 0 is the left side. */
-  legs: TransformNode[];
-  arms: TransformNode[];
-}
-
-/**
- * One astronaut built from instances, about 1.25 units tall. Faces +x: visor and chest light
- * at the front, life-support pack with two air tanks on the back.
- */
-export function colonistModel(scene: Scene, parts: ColonistParts, alt: boolean): ColonistRig {
-  const root = new TransformNode('colonist', scene);
-  const add = (src: Mesh, parent: TransformNode, pos: Vector3, scale?: Vector3, rotZ = 0) => {
-    const inst = src.createInstance('c');
-    inst.parent = parent;
-    inst.position = pos;
-    if (scale) inst.scaling = scale;
-    if (rotZ) inst.rotation.z = rotZ;
-    inst.isPickable = false;
-    return inst;
-  };
-  const pivot = (pos: Vector3) => {
-    const n = new TransformNode('pivot', scene);
-    n.parent = root;
-    n.position = pos;
-    return n;
-  };
-  add(parts.torso, root, V(0, 0.66, 0));
-  add(parts.belt, root, V(0, 0.46, 0));
-  add(alt ? parts.band2 : parts.band, root, V(0.17, 0.7, 0));
-  add(parts.chestLight, root, V(0.2, 0.62, 0.07));
-  add(parts.collar, root, V(0, 0.9, 0));
-  add(parts.helmet, root, V(0, 1.06, 0));
-  add(parts.visor, root, V(0.1, 1.06, 0), V(0.62, 0.62, 0.85));
-  add(parts.pack, root, V(-0.21, 0.7, 0));
-  add(parts.tank, root, V(-0.3, 0.72, 0.08));
-  add(parts.tank, root, V(-0.3, 0.72, -0.08));
-  add(parts.antenna, root, V(-0.24, 1.02, -0.1));
-  add(parts.tip, root, V(-0.24, 1.15, -0.1));
-  const legs = [-1, 1].map((side) => {
-    const hip = pivot(V(0, 0.44, side * 0.1));
-    add(parts.leg, hip, V(0, -0.18, 0));
-    add(parts.boot, hip, V(0.03, -0.4, 0));
-    return hip;
-  });
-  const arms = [-1, 1].map((side) => {
-    const shoulder = pivot(V(0, 0.82, side * 0.24));
-    add(alt ? parts.pad2 : parts.pad, shoulder, V(0, 0.01, 0));
-    add(parts.arm, shoulder, V(0, -0.15, side * 0.02));
-    add(parts.glove, shoulder, V(0, -0.32, side * 0.02));
-    return shoulder;
-  });
-  return { root, legs, arms };
 }
