@@ -361,9 +361,14 @@ export const CONFIG = {
   startColonists: 4,
   startCrystals: 50,
   colonistSpawnSec: 4,
-  /** Tiles per second on roads, and off-road for gatherers. */
+  /** Tiles per second on roads, and off-road for gatherers, for an unsuited colonist. */
   roadSpeed: 2.4,
   offRoadSpeed: 1.7,
+  /**
+   * Space suits and breathing kit slow colonists to this share of their full speed.
+   * Once terraforming makes the air breathable, this goes back to 1.
+   */
+  suitSpeed: 0.5,
   /** Goods a colonist carries per trip. */
   carryMax: 3,
   /** Output a workplace holds before it stops and waits for carriers. */

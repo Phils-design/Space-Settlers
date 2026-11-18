@@ -380,40 +380,89 @@ export const MODELS: Record<BuildingType, ModelFn> = {
  * so dozens of colonists cost a handful of draw calls.
  */
 export function colonistParts(scene: Scene, m: Materials) {
-  const hide = (mesh: Mesh) => {
+  const hide = (mesh: Mesh, mat: Mesh['material']) => {
+    mesh.material = mat;
     mesh.isVisible = false;
     mesh.isPickable = false;
     return mesh;
   };
-  const body = hide(MeshBuilder.CreateCapsule('body', { height: 0.8, radius: 0.22 }, scene));
-  body.material = m.suit;
-  const body2 = hide(body.clone('body2'));
-  body2.material = m.suit2;
-  const helmet = hide(MeshBuilder.CreateSphere('helmet', { diameter: 0.48, segments: 10 }, scene));
-  helmet.material = m.metal;
-  const visor = hide(MeshBuilder.CreateSphere('visor', { diameter: 0.34, segments: 8 }, scene));
-  visor.material = m.visor;
-  const pack = hide(MeshBuilder.CreateBox('pack', { width: 0.2, height: 0.4, depth: 0.3 }, scene));
-  pack.material = m.dark;
-  return { body, body2, helmet, visor, pack };
+  return {
+    torso: hide(MeshBuilder.CreateCapsule('torso', { height: 0.52, radius: 0.19, tessellation: 10 }, scene), m.suitWhite),
+    /** Suit colour bands: chest panel and shoulder pads, orange or yellow by crew. */
+    band: hide(MeshBuilder.CreateBox('band', { width: 0.05, height: 0.16, depth: 0.26 }, scene), m.suit),
+    band2: hide(MeshBuilder.CreateBox('band2', { width: 0.05, height: 0.16, depth: 0.26 }, scene), m.suit2),
+    pad: hide(MeshBuilder.CreateSphere('pad', { diameter: 0.17, segments: 6 }, scene), m.suit),
+    pad2: hide(MeshBuilder.CreateSphere('pad2', { diameter: 0.17, segments: 6 }, scene), m.suit2),
+    belt: hide(MeshBuilder.CreateCylinder('belt', { height: 0.07, diameter: 0.4, tessellation: 12 }, scene), m.dark),
+    chestLight: hide(MeshBuilder.CreateBox('chestLight', { width: 0.03, height: 0.05, depth: 0.08 }, scene), m.cyan),
+    leg: hide(MeshBuilder.CreateCapsule('leg', { height: 0.36, radius: 0.08, tessellation: 8 }, scene), m.suitWhite),
+    boot: hide(MeshBuilder.CreateBox('boot', { width: 0.2, height: 0.09, depth: 0.13 }, scene), m.dark),
+    arm: hide(MeshBuilder.CreateCapsule('arm', { height: 0.32, radius: 0.06, tessellation: 8 }, scene), m.suitWhite),
+    glove: hide(MeshBuilder.CreateSphere('glove', { diameter: 0.12, segments: 6 }, scene), m.dark),
+    helmet: hide(MeshBuilder.CreateSphere('helmet', { diameter: 0.44, segments: 12 }, scene), m.helmet),
+    collar: hide(MeshBuilder.CreateCylinder('collar', { height: 0.07, diameter: 0.3, tessellation: 12 }, scene), m.metal),
+    visor: hide(MeshBuilder.CreateSphere('visor', { diameter: 0.34, segments: 10 }, scene), m.visor),
+    pack: hide(MeshBuilder.CreateBox('pack', { width: 0.16, height: 0.4, depth: 0.32 }, scene), m.dark),
+    tank: hide(MeshBuilder.CreateCapsule('tank', { height: 0.36, radius: 0.06, tessellation: 8 }, scene), m.metal),
+    antenna: hide(MeshBuilder.CreateCylinder('antenna', { height: 0.26, diameter: 0.018, tessellation: 4 }, scene), m.metal),
+    tip: hide(MeshBuilder.CreateSphere('tip', { diameter: 0.05, segments: 4 }, scene), m.trim),
+  };
 }
 
 export type ColonistParts = ReturnType<typeof colonistParts>;
 
-/** One colonist built from instances, about 1.2 units tall. */
-export function colonistModel(scene: Scene, parts: ColonistParts, alt: boolean) {
+export interface ColonistRig {
+  root: TransformNode;
+  /** Hip and shoulder pivots, swung when walking. Index 0 is the left side. */
+  legs: TransformNode[];
+  arms: TransformNode[];
+}
+
+/**
+ * One astronaut built from instances, about 1.25 units tall. Faces +x: visor and chest light
+ * at the front, life-support pack with two air tanks on the back.
+ */
+export function colonistModel(scene: Scene, parts: ColonistParts, alt: boolean): ColonistRig {
   const root = new TransformNode('colonist', scene);
-  const add = (src: Mesh, pos: Vector3, scale?: Vector3) => {
+  const add = (src: Mesh, parent: TransformNode, pos: Vector3, scale?: Vector3, rotZ = 0) => {
     const inst = src.createInstance('c');
-    inst.parent = root;
+    inst.parent = parent;
     inst.position = pos;
     if (scale) inst.scaling = scale;
+    if (rotZ) inst.rotation.z = rotZ;
     inst.isPickable = false;
     return inst;
   };
-  add(alt ? parts.body2 : parts.body, V(0, 0.45, 0));
-  add(parts.helmet, V(0, 1.0, 0));
-  add(parts.visor, V(0.11, 1.0, 0), V(0.6, 0.75, 1));
-  add(parts.pack, V(-0.22, 0.6, 0));
-  return root;
+  const pivot = (pos: Vector3) => {
+    const n = new TransformNode('pivot', scene);
+    n.parent = root;
+    n.position = pos;
+    return n;
+  };
+  add(parts.torso, root, V(0, 0.66, 0));
+  add(parts.belt, root, V(0, 0.46, 0));
+  add(alt ? parts.band2 : parts.band, root, V(0.17, 0.7, 0));
+  add(parts.chestLight, root, V(0.2, 0.62, 0.07));
+  add(parts.collar, root, V(0, 0.9, 0));
+  add(parts.helmet, root, V(0, 1.06, 0));
+  add(parts.visor, root, V(0.1, 1.06, 0), V(0.62, 0.62, 0.85));
+  add(parts.pack, root, V(-0.21, 0.7, 0));
+  add(parts.tank, root, V(-0.3, 0.72, 0.08));
+  add(parts.tank, root, V(-0.3, 0.72, -0.08));
+  add(parts.antenna, root, V(-0.24, 1.02, -0.1));
+  add(parts.tip, root, V(-0.24, 1.15, -0.1));
+  const legs = [-1, 1].map((side) => {
+    const hip = pivot(V(0, 0.44, side * 0.1));
+    add(parts.leg, hip, V(0, -0.18, 0));
+    add(parts.boot, hip, V(0.03, -0.4, 0));
+    return hip;
+  });
+  const arms = [-1, 1].map((side) => {
+    const shoulder = pivot(V(0, 0.82, side * 0.24));
+    add(alt ? parts.pad2 : parts.pad, shoulder, V(0, 0.01, 0));
+    add(parts.arm, shoulder, V(0, -0.15, side * 0.02));
+    add(parts.glove, shoulder, V(0, -0.32, side * 0.02));
+    return shoulder;
+  });
+  return { root, legs, arms };
 }

@@ -15,6 +15,7 @@ import {
   speedUpCost,
   stats,
 } from '../sim/game';
+import { tileInfo } from '../sim/inspect';
 import { treesNear } from '../sim/jobs';
 import { connected } from '../sim/path';
 import { byId, colonistById, type Building, type GameState } from '../sim/state';
@@ -33,6 +34,10 @@ export interface UiState {
   settings: boolean;
   confirmReset: boolean;
   confirmDemolish: boolean;
+  /** Tile shown in the long-press inspector, and when it closes (ms since page load). */
+  inspect?: { x: number; y: number; until: number };
+  /** When the colony was last saved (epoch ms). */
+  savedAt?: number;
 }
 
 export interface Projector {
@@ -169,11 +174,12 @@ export class Hud {
       ui.confirmReset
         ? `<h2>Start a new colony?</h2><p>Your current colony will be deleted. This can't be undone.</p>
            <div class="actions"><button class="btn ghost" data-action="reset-cancel">Keep playing</button><button class="btn danger" data-action="reset-confirm">Delete and restart</button></div>`
-        : `<h2>Terraform Wars</h2><p>Prototype build. Your colony saves on this device automatically.</p>
-           <p>Drag to turn the camera, pinch or scroll to zoom, and drag with two fingers (or right-click) to move.</p>
-           <div class="actions"><button class="btn ghost" data-action="settings">Close</button><button class="btn ghost" data-action="reset">New colony</button></div>`,
+        : `<h2>Terraform Wars</h2><p>Prototype build. Your colony saves on this device automatically${ui.savedAt ? `, last saved ${fmtTime((Date.now() - ui.savedAt) / 1000)} ago` : ''}.</p>
+           <p>Drag with one finger to move around the map. Twist two fingers to turn, slide them up or down to tilt, and pinch to zoom. With a mouse, right-drag turns and the wheel zooms. Long-press a tree, rock or deposit to see what's left in it.</p>
+           <div class="actions"><button class="btn ghost" data-action="settings">Close</button><button class="btn ghost" data-action="reset">New colony</button></div>
+           <p class="version">Version ${__APP_VERSION__}</p>`,
     );
-    this.collectLabels(s);
+    this.collectLabels(s, ui);
   }
 
   /** Goods in storage. Only goods the colony can use yet are shown, so the strip grows with the colony. */
@@ -424,8 +430,20 @@ export class Hud {
 
   // ---------- labels over buildings ----------
 
-  private collectLabels(s: GameState) {
+  private collectLabels(s: GameState, ui: UiState) {
     const out: LabelInfo[] = [];
+    const st = stats(s);
+    if (ui.inspect && performance.now() < ui.inspect.until) {
+      const { x, y } = ui.inspect;
+      const info = tileInfo(s, x, y);
+      out.push({
+        id: -1,
+        tx: x + 0.5,
+        ty: y + 0.5,
+        h: 2.2,
+        html: `<div class="inspect"><b>${info?.title ?? 'Open ground'}</b>${(info?.lines ?? ['Nothing to gather here']).map((l) => `<span>${l}</span>`).join('')}</div>`,
+      });
+    }
     for (const b of s.buildings) {
       const d = BUILDINGS[b.type];
       const c = { tx: b.x + d.size / 2, ty: b.y + d.size / 2, h: 3.4 + d.size };
@@ -442,7 +460,10 @@ export class Hud {
         });
         continue;
       }
-      if (b.type === 'hub') continue;
+      if (b.type === 'hub') {
+        if (st.powerUse > st.powerGen) out.push({ id: b.id, ...c, html: `<span class="pill warn">${ICON.power}Needs power</span>` });
+        continue;
+      }
       let issue = '';
       if (!connected(s, b)) issue = 'Needs road';
       else if (d.workers && b.paused) issue = 'Paused';

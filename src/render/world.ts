@@ -26,8 +26,9 @@ import { rng } from '../sim/map';
 import { lv, occupancy } from '../sim/rules';
 import { byId, type Building, type GameState } from '../sim/state';
 import { territory } from '../sim/territory';
+import { CameraControls } from './controls';
 import { makeMaterials, type Materials } from './materials';
-import { MODELS, colonistModel, colonistParts, type ColonistParts } from './models';
+import { MODELS, colonistModel, colonistParts, type ColonistParts, type ColonistRig } from './models';
 
 /** World units per tile. */
 export const TILE = 2;
@@ -43,8 +44,7 @@ interface BuildingView {
   pileKey: string;
 }
 
-interface ColonistView {
-  root: TransformNode;
+interface ColonistView extends ColonistRig {
   crate?: InstancedMesh;
   crateGood?: Good;
   lx: number;
@@ -108,10 +108,9 @@ export class World {
     cam.lowerBetaLimit = 0.3;
     cam.upperBetaLimit = 1.3;
     cam.wheelDeltaPercentage = 0.01;
-    cam.pinchDeltaPercentage = 0.004;
-    cam.panningAxis = new Vector3(1, 0, 1);
     cam.maxZ = 1200;
     cam.attachControl(canvas, true);
+    new CameraControls(scene, cam, canvas, this.reduceMotion);
 
     const hemi = new HemisphericLight('hemi', new Vector3(0, 1, 0), scene);
     hemi.intensity = 0.62;
@@ -571,9 +570,9 @@ export class World {
       seen.add(c.id);
       let v = this.colonists.get(c.id);
       if (!v) {
-        const root = colonistModel(this.scene, this.parts, c.id % 3 === 0);
-        root.scaling.setAll(1.7);
-        v = { root, lx: c.x, ly: c.y, phase: (c.id * 1.7) % 6 };
+        const rig = colonistModel(this.scene, this.parts, c.id % 3 === 0);
+        rig.root.scaling.setAll(1.65);
+        v = { ...rig, lx: c.x, ly: c.y, phase: (c.id * 1.7) % 6 };
         this.colonists.set(c.id, v);
       }
       v.root.setEnabled(c.inside == null);
@@ -603,9 +602,20 @@ export class World {
         v.root.rotation.y = -Math.atan2(Math.floor(job.node / s.size) + 0.5 - c.y, (job.node % s.size) + 0.5 - c.x);
       }
       let bob = 0;
+      // A slow, heavy stride: they're hauling a suit and life support.
+      const stride = moving && !this.reduceMotion ? Math.sin(now / 160 + v.phase) : 0;
+      const carrying = !!c.carry;
       if (!this.reduceMotion) {
-        if (moving) bob = Math.abs(Math.sin(now / 90 + v.phase)) * 0.12;
-        else if (building || harvesting) bob = Math.abs(Math.sin(now / 140 + v.phase)) * 0.22;
+        if (moving) bob = Math.abs(stride) * 0.05;
+        else if (building || harvesting) bob = Math.abs(Math.sin(now / 140 + v.phase)) * 0.12;
+      }
+      v.legs[0].rotation.z = stride * 0.55;
+      v.legs[1].rotation.z = -stride * 0.55;
+      // Arms swing opposite the legs, or reach forward to hold a crate or a tool.
+      const work = (building || harvesting) && !this.reduceMotion ? Math.sin(now / 140 + v.phase) * 0.5 : 0;
+      for (const [k, arm] of v.arms.entries()) {
+        const sign = k === 0 ? -1 : 1;
+        arm.rotation.z = carrying ? 1.2 : building || harvesting ? 1.0 + work : sign * stride * 0.45;
       }
       v.root.position = this.toWorld(c.x + ox, c.y + oy, 0.1 + bob);
       const good = c.carry?.good;
@@ -615,7 +625,7 @@ export class World {
         if (good) {
           const crate = this.crates.get(good)!.createInstance('carry');
           crate.parent = v.root;
-          crate.position = new Vector3(0.26, 0.62, 0);
+          crate.position = new Vector3(0.36, 0.62, 0);
           crate.isPickable = false;
           v.crate = crate;
         }
@@ -636,8 +646,6 @@ export class World {
     const dt = this.engine.getDeltaTime() / 1000;
     if (!this.reduceMotion) for (const node of this.spinners) node.rotation.y += node.metadata.spin * dt;
     const cam = this.camera;
-    // Panning feels the same at any zoom.
-    cam.panningSensibility = Math.max(8, 2600 / cam.radius);
     // Keep the camera over the map.
     const lim = (this.size * TILE) / 2;
     const t = cam.target;

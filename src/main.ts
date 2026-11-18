@@ -8,24 +8,38 @@ import { OLD_SAVE_KEYS, SAVE_KEY, deserialize, serialize } from './sim/save';
 import { byId, createGame, hub, type GameState } from './sim/state';
 import { Hud, type UiState } from './ui/hud';
 
-const SEED = 1;
+/** The very first colony on a device always gets the same, tested map. New colonies get a fresh one. */
+const FIRST_SEED = 1;
+const SEED_KEY = 'terraform-wars.next-seed';
+
+/** Set while a new colony is starting, so the old colony isn't saved back on the way out. */
+let resetting = false;
+let saveFailed = false;
 
 function load(): GameState {
+  let seed = FIRST_SEED;
   try {
     for (const k of OLD_SAVE_KEYS) localStorage.removeItem(k);
     const saved = deserialize(localStorage.getItem(SAVE_KEY));
     if (saved) return saved;
+    seed = Number(localStorage.getItem(SEED_KEY)) || FIRST_SEED;
+    localStorage.removeItem(SEED_KEY);
   } catch {
     /* storage blocked: start fresh */
   }
-  return createGame(SEED, Date.now());
+  return createGame(seed, Date.now());
 }
 
 function save(s: GameState) {
+  if (resetting) return;
   try {
     localStorage.setItem(SAVE_KEY, serialize(s));
+    ui.savedAt = Date.now();
+    saveFailed = false;
   } catch {
-    /* storage blocked or full: keep playing without saving */
+    // Storage blocked or full: keep playing, but say so once rather than losing progress silently.
+    if (!saveFailed) hud.toast("Can't save on this device. Progress will be lost when you close the game");
+    saveFailed = true;
   }
 }
 
@@ -145,8 +159,10 @@ function act(action: string, arg?: string) {
       ui.settings = false;
       break;
     case 'reset-confirm':
+      resetting = true;
       try {
         localStorage.removeItem(SAVE_KEY);
+        localStorage.setItem(SEED_KEY, String(2 + Math.floor(Math.random() * 2_000_000_000)));
       } catch {
         /* ignore */
       }
@@ -196,26 +212,65 @@ function onTap(px: number, py: number) {
   hud.render(state, ui);
 }
 
-// Taps vs. camera drags: a tap is a short press that barely moves, with one finger.
-const pointers = new Map<number, { x: number; y: number; t: number }>();
+/** Long-press: shows what a tree, rock or deposit has left to give. */
+function onLongPress(px: number, py: number) {
+  const hit = world.pick(px, py, true);
+  if (!hit.tile) return;
+  ui.inspect = { ...hit.tile, until: performance.now() + 6000 };
+  ui.settings = false;
+  navigator.vibrate?.(15);
+  hud.render(state, ui);
+}
+
+// Taps vs. long-presses vs. camera drags: a tap is a short press that barely moves, with one finger.
+const LONG_PRESS_MS = 450;
+const pointers = new Map<number, { x: number; y: number; t: number; moved: boolean }>();
 let multi = false;
+let pressTimer = 0;
+let longFired = false;
+const cancelPress = () => {
+  clearTimeout(pressTimer);
+  pressTimer = 0;
+};
 canvas.addEventListener('pointerdown', (e) => {
-  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now() });
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now(), moved: false });
   if (pointers.size > 1) multi = true;
+  cancelPress();
+  longFired = false;
+  if (pointers.size === 1 && e.button === 0 && ui.mode.kind === 'view') {
+    const r = canvas.getBoundingClientRect();
+    const px = e.clientX - r.left;
+    const py = e.clientY - r.top;
+    pressTimer = window.setTimeout(() => {
+      pressTimer = 0;
+      longFired = true;
+      onLongPress(px, py);
+    }, LONG_PRESS_MS);
+  }
+});
+canvas.addEventListener('pointermove', (e) => {
+  const p = pointers.get(e.pointerId);
+  if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) >= 10) {
+    p.moved = true;
+    cancelPress();
+  }
 });
 canvas.addEventListener('pointerup', (e) => {
   const p = pointers.get(e.pointerId);
   pointers.delete(e.pointerId);
+  cancelPress();
   const wasMulti = multi;
   if (pointers.size === 0) multi = false;
-  if (!p || wasMulti || e.button > 0) return;
-  if (Math.hypot(e.clientX - p.x, e.clientY - p.y) < 10 && performance.now() - p.t < 500) {
+  if (!p || wasMulti || e.button > 0 || longFired) return;
+  if (!p.moved && Math.hypot(e.clientX - p.x, e.clientY - p.y) < 10 && performance.now() - p.t < LONG_PRESS_MS) {
+    ui.inspect = undefined;
     const r = canvas.getBoundingClientRect();
     onTap(e.clientX - r.left, e.clientY - r.top);
   }
 });
 canvas.addEventListener('pointercancel', (e) => {
   pointers.delete(e.pointerId);
+  cancelPress();
   if (pointers.size === 0) multi = false;
 });
 
@@ -243,7 +298,8 @@ world.engine.runRenderLoop(() => {
     lastHud = now;
     hud.render(state, ui);
   }
-  if (now - lastSave > 5000) {
+  // Autosave every few seconds as well as after every action, so little is lost if the app is killed.
+  if (now - lastSave > 3000) {
     lastSave = now;
     save(state);
   }
