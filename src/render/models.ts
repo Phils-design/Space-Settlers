@@ -548,9 +548,10 @@ export function colonistModel(scene: Scene, parts: ColonistParts, look: Colonist
 
   // Helmet: a big tinted visor with a coloured rim, a glint, ear pieces and some gear on top.
   suit(parts.helmet, body, V(0, 1.07, 0));
-  add(parts.visors[look.visor], body, V(0.135, 1.06, 0), V(0.62, 0.7, 0.92));
-  accent(parts.rim, body, V(0.18, 1.06, 0), V(1, 0.82, 1.05), V(0, 0, Math.PI / 2));
-  add(parts.glint, body, V(0.245, 1.11, 0.07), V(0.4, 0.7, 0.45));
+  // One round glass, framed by its rim.
+  add(parts.visors[look.visor], body, V(0.135, 1.06, 0), V(0.6, 0.83, 0.83));
+  accent(parts.rim, body, V(0.18, 1.06, 0), undefined, V(0, 0, Math.PI / 2));
+  add(parts.glint, body, V(0.245, 1.12, 0.07), V(0.4, 0.7, 0.45));
   for (const side of [-1, 1]) {
     add(parts.ear, body, V(0, 1.07, side * 0.22), undefined, V(Math.PI / 2, 0, 0));
     accent(parts.earCap, body, V(0, 1.07, side * 0.25), undefined, V(Math.PI / 2, 0, 0));
