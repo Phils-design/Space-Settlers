@@ -38,6 +38,8 @@ export interface UiState {
   inspect?: { x: number; y: number; until: number };
   /** When the colony was last saved (epoch ms). */
   savedAt?: number;
+  /** Bug reports and ideas with news the player hasn't read yet. */
+  fbUnseen?: number;
 }
 
 export interface Projector {
@@ -95,6 +97,33 @@ function sameKind(a: Node, b: Node) {
 function patchAttributes(to: Element, from: Element) {
   for (const { name } of Array.from(to.attributes)) if (!from.hasAttribute(name)) to.removeAttribute(name);
   for (const { name, value } of Array.from(from.attributes)) if (to.getAttribute(name) !== value) to.setAttribute(name, value);
+}
+
+/** The goals checklist, in order, each with whether it's done. */
+export function goalList(s: GameState): [string, boolean][] {
+  const has = (t: BuildingType, level = 1) => s.buildings.some((b) => b.type === t && b.level >= level);
+  const lvl = hubLevel(s);
+  return [
+    ['Place a Lumber Camp near the glowing trees', s.buildings.some((b) => b.type === 'lumber')],
+    ['Link it to the Command Hub with a road', s.buildings.some((b) => b.type === 'lumber' && connected(s, b))],
+    ['Build a Quarry next to the grey rocks', has('quarry')],
+    ['Build a Sawmill and make 10 planks', (s.made.planks ?? 0) >= 10],
+    ['Build a Habitat so more colonists arrive', has('habitat')],
+    ['Upgrade the Command Hub to level 2', lvl >= 2],
+    ['Build a Solar Array for more power', has('solar')],
+    ['Build an Ice Drill and a Hydroponics Farm', has('icedrill') && has('farm')],
+    ['Build an Ore Mine on the rust-red ground', has('mine')],
+    ['Build a Lumenite Extractor on the violet crystals', has('extractor')],
+    ['Upgrade the Command Hub to level 3', lvl >= 3],
+    ['Smelt steel and make your first circuit', (s.made.circuits ?? 0) >= 1],
+  ];
+}
+
+/** The goal the player is on, 1-based (one past the last when all are done). */
+export function goalStage(s: GameState): number {
+  const goals = goalList(s);
+  const first = goals.findIndex(([, d]) => !d);
+  return (first === -1 ? goals.length : first) + 1;
 }
 
 interface LabelInfo {
@@ -161,7 +190,7 @@ export class Hud {
         <span class="chip" title="Quantum Crystals">${ICON.crystal}${s.crystals}</span>
       </div>
       <button class="iconbtn" data-action="recentre" aria-label="Recentre camera">${ICON.target}</button>
-      <button class="iconbtn" data-action="settings" aria-label="Menu">${ICON.menu}</button>`,
+      <button class="iconbtn${ui.fbUnseen ? ' dot' : ''}" data-action="settings" aria-label="Menu">${ICON.menu}</button>`,
     );
     this.set(this.goodsEl, this.goodsStrip(s, st.storageCap));
     this.goodsEl.style.top = `${this.top.getBoundingClientRect().bottom + 5}px`;
@@ -176,6 +205,7 @@ export class Hud {
            <div class="actions"><button class="btn ghost" data-action="reset-cancel">Keep playing</button><button class="btn danger" data-action="reset-confirm">Delete and restart</button></div>`
         : `<h2>Terraform Wars</h2><p>Prototype build. Your colony saves on this device automatically${ui.savedAt ? `, last saved ${fmtTime((Date.now() - ui.savedAt) / 1000)} ago` : ''}.</p>
            <p>Drag with one finger to move around the map. Twist two fingers to turn, slide them up or down to tilt, and pinch to zoom. With a mouse, right-drag turns and the wheel zooms. Long-press a tree, rock or deposit to see what's left in it.</p>
+           <button class="btn ghost wide${ui.fbUnseen ? ' dot' : ''}" data-action="feedback">Report a bug or idea${ui.fbUnseen ? ` · ${ui.fbUnseen} new` : ''}</button>
            <div class="actions"><button class="btn ghost" data-action="settings">Close</button><button class="btn ghost" data-action="reset">New colony</button></div>
            <p class="version">Version ${__APP_VERSION__}</p>`,
     );
@@ -201,22 +231,7 @@ export class Hud {
   }
 
   private renderGoals(s: GameState, ui: UiState) {
-    const has = (t: BuildingType, level = 1) => s.buildings.some((b) => b.type === t && b.level >= level);
-    const lvl = hubLevel(s);
-    const goals: [string, boolean][] = [
-      ['Place a Lumber Camp near the glowing trees', s.buildings.some((b) => b.type === 'lumber')],
-      ['Link it to the Command Hub with a road', s.buildings.some((b) => b.type === 'lumber' && connected(s, b))],
-      ['Build a Quarry next to the grey rocks', has('quarry')],
-      ['Build a Sawmill and make 10 planks', (s.made.planks ?? 0) >= 10],
-      ['Build a Habitat so more colonists arrive', has('habitat')],
-      ['Upgrade the Command Hub to level 2', lvl >= 2],
-      ['Build a Solar Array for more power', has('solar')],
-      ['Build an Ice Drill and a Hydroponics Farm', has('icedrill') && has('farm')],
-      ['Build an Ore Mine on the rust-red ground', has('mine')],
-      ['Build a Lumenite Extractor on the violet crystals', has('extractor')],
-      ['Upgrade the Command Hub to level 3', lvl >= 3],
-      ['Smelt steel and make your first circuit', (s.made.circuits ?? 0) >= 1],
-    ];
+    const goals = goalList(s);
     const first = goals.findIndex(([, d]) => !d);
     const all = first === -1;
     // Older finished goals fold into one line so the current one stays in view.

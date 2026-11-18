@@ -22,6 +22,15 @@ This branch holds **phase 0**: a single-player prototype that runs in the browse
 - A goals checklist that walks a new player from the first Lumber Camp to the first circuit.
 - Saves to the browser on this device.
 
+## Bugs and ideas
+
+Players report bugs and ideas from the game menu (**Report a bug or idea**). Reports go to Phil's shared feedback console (https://feedbackprocess.netlify.app) under the app slug `terraformwars`; the contract is `docs/APP-INTEGRATION.md` in Phils-design/Feedback-System, which this repo never changes.
+
+- Each report can carry game details: version, Command Hub level (`diag.level`), the goal the player is on (`diag.stage`, 1-based) and seconds played in this colony (`diag.playtime`).
+- The device keeps the keys of its last 30 reports and asks `/api/fbstatus` how they fared, so the panel shows the status, the ship note and Phil's reply. News also shows as a toast and a dot on the menu button.
+- **Developer key**: at the bottom of the panel Phil can paste his admin key. It is kept in this device's `localStorage` only and sent as `dk` with his reports, which the console then files as approved. It is never in the repo.
+- Only cards Phil has approved (`st === 'ok'`) are built.
+
 ## Running it
 
 ```bash
@@ -30,6 +39,10 @@ npm run dev      # local dev server, also reachable from a phone on the same Wi-
 npm test         # game-rule tests, plus a scripted play-through on several maps
 npm run build    # production build in dist/
 ```
+
+## Hosting
+
+The game is hosted on Netlify (`netlify.toml`): build `npm run build`, publish `dist`. It needs a real site of its own: a claude.ai artifact preview can't reach the feedback console, so reports fail there.
 
 ## Layout
 
