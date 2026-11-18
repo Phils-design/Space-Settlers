@@ -346,10 +346,16 @@ export class Hud {
     const roadBtn = needsRoad ? `<button class="btn teal" data-action="connect" data-arg="${b.id}">${ICON.link} Build road to Hub</button>` : '';
 
     if (ui.confirmDemolish) {
-      return `<div class="panel" data-key="panel-${b.id}">${head}<p class="blurb">${
-        b.site ? 'Cancel this build? Materials already delivered go back to storage.' : `Demolish this ${d.name}? Nothing is refunded, but goods waiting inside go back to storage.`
-      }</p><div class="actions"><button class="btn ghost" data-action="demolish-cancel">Keep it</button><button class="btn danger" data-action="demolish-confirm" data-arg="${b.id}">${
-        b.site ? 'Cancel build' : 'Demolish'
+      const upgrading = !!b.site && b.level > 0;
+      const ask = upgrading
+        ? `Cancel this upgrade? The ${d.name} stays at level ${b.level}, and materials already delivered go back to storage.`
+        : b.site
+          ? 'Cancel this build? Materials already delivered go back to storage.'
+          : `Demolish this ${d.name}? Nothing is refunded, but goods waiting inside go back to storage.`;
+      return `<div class="panel" data-key="panel-${b.id}">${head}<p class="blurb">${ask}</p><div class="actions"><button class="btn ghost" data-action="demolish-cancel">${
+        b.site ? 'Keep building' : 'Keep it'
+      }</button><button class="btn danger" data-action="demolish-confirm" data-arg="${b.id}">${
+        upgrading ? 'Cancel upgrade' : b.site ? 'Cancel build' : 'Demolish'
       }</button></div></div>`;
     }
 
@@ -378,7 +384,7 @@ export class Hud {
         ${mats ? `<div class="mats">${mats}</div>` : ''}
         ${warns}
         <div class="actions">${roadBtn}<button class="btn violet" data-action="speedup" data-arg="${b.id}" ${blocked ? 'disabled' : ''}>${ICON.crystal} Finish now · ${speedUpCost(b)}</button>
-        <button class="btn ghost" data-action="demolish" data-arg="${b.id}">Cancel build</button></div>
+        <button class="btn ghost" data-action="demolish" data-arg="${b.id}">${b.level ? 'Cancel upgrade' : 'Cancel build'}</button></div>
         ${blocked && blocked !== 'Nothing to finish' ? `<p class="hint">${blocked}.</p>` : ''}</div>`;
     }
 

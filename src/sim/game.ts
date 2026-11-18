@@ -1,6 +1,6 @@
 import { add, entries, get, total } from './bag';
 import { BUILDINGS, CONFIG, GOOD_INFO, type Bag, type BuildingType, type Good } from './config';
-import { assignJobs, findNode, findPlantSpot, release, releaseWorker, tidySites, updateColonists, workAllowed, workerInside } from './jobs';
+import { abandonSite, assignJobs, findNode, findPlantSpot, release, releaseWorker, tidySites, updateColonists, workAllowed, workerInside } from './jobs';
 import { connected, forgetField } from './path';
 import { roadReach } from './roads';
 import { buildBlocker, canPlace, fail, hubLevel, isStorage, lv, OK, stats, type Result } from './rules';
@@ -41,6 +41,21 @@ export function startUpgrade(s: GameState, id: number): Result {
   const check = canUpgrade(s, b);
   if (!check.ok) return check;
   b.site = newSite(b.level + 1, b.type);
+  return OK;
+}
+
+/**
+ * Calls off a building's construction. A new building is removed; an upgrade is dropped and the
+ * building keeps its current level. Either way, materials already delivered go back to storage.
+ */
+export function cancelSite(s: GameState, id: number): Result {
+  const b = byId(s, id);
+  if (!b?.site) return fail('Nothing to cancel');
+  if (b.level === 0) return demolish(s, id);
+  abandonSite(s, b);
+  for (const [g, n] of entries(b.site.have)) add(s.stock, g, n);
+  b.site = undefined;
+  s.buildingsRev++;
   return OK;
 }
 
@@ -118,6 +133,7 @@ export function demolish(s: GameState, id: number): Result {
   const b = byId(s, id);
   if (!b) return fail('No such building');
   if (b.type === 'hub') return fail("The Command Hub can't be demolished");
+  if (b.site) abandonSite(s, b);
   releaseWorker(s, b);
   for (const bag of [b.site?.have ?? {}, b.inv, b.out]) for (const [g, n] of entries(bag)) add(s.stock, g, n);
   s.buildings = s.buildings.filter((o) => o !== b);

@@ -620,6 +620,23 @@ export function releaseWorker(s: GameState, b: Building) {
   release(s, c);
 }
 
+/** Calls off everyone working on a site that is being cancelled. Goods already picked up go to storage. */
+export function abandonSite(s: GameState, b: Building) {
+  for (const c of s.colonists) {
+    const job = c.job;
+    if (job?.kind === 'build' && job.site === b.id) release(s, c);
+    else if (job?.kind === 'haul' && job.dest === 'site' && job.to === b.id) {
+      unreserveDest(s, job);
+      if (job.stage === 'pickup') {
+        const from = byId(s, job.from);
+        if (job.fromStore) add(s.reserved, job.good, -job.n);
+        else if (from) add(from.outReserved, job.good, -job.n);
+        release(s, c);
+      } else redirectToStore(s, c, job);
+    }
+  }
+}
+
 /** Make sure a builder field is cleared if that colonist no longer works there. */
 export function tidySites(s: GameState) {
   for (const b of s.buildings) {

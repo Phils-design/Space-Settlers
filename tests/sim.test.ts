@@ -3,6 +3,7 @@ import { BUILDINGS, CONFIG, FERRITE, ICE, LUMENITE, OPEN, type BuildingType } fr
 import {
   buildingStatus,
   canPlace,
+  cancelSite,
   demolish,
   placeBuilding,
   simulate,
@@ -391,6 +392,60 @@ describe('demolish', () => {
     expect(s.colonists.every((c) => c.job?.kind !== 'work')).toBe(true);
     expect(demolish(s, hub(s).id).ok).toBe(false);
     simulate(s, 30);
+  });
+});
+
+describe('cancelling an upgrade', () => {
+  const sum = (b: Partial<Record<string, number>>) => Object.values(b).reduce((a: number, n) => a + (n ?? 0), 0);
+
+  it('refunds delivered materials and keeps the hub at its level', () => {
+    const s = blank();
+    mainRoad(s);
+    const h = hub(s);
+    const before = sum(s.stock) + s.colonists.reduce((a, c) => a + (c.carry?.n ?? 0), 0);
+    expect(startUpgrade(s, h.id).ok).toBe(true);
+    simulate(s, 6);
+    expect(h.site).toBeDefined();
+    expect(sum(h.site!.have) + sum(h.site!.incoming)).toBeGreaterThan(0);
+    expect(cancelSite(s, h.id).ok).toBe(true);
+    expect(h.site).toBeUndefined();
+    expect(h.level).toBe(1);
+    expect(s.buildings).toContain(h);
+    // Nobody is still working on the cancelled site.
+    expect(s.colonists.some((c) => (c.job?.kind === 'build' && c.job.site === h.id) || (c.job?.kind === 'haul' && c.job.dest === 'site'))).toBe(false);
+    simulate(s, 30);
+    // Everything that left storage comes back once carriers drop what they hold.
+    expect(sum(s.stock) + s.colonists.reduce((a, c) => a + (c.carry?.n ?? 0), 0)).toBe(before);
+    expect(sum(s.reserved)).toBe(0);
+    // The upgrade can be started again and finished.
+    expect(startUpgrade(s, h.id).ok).toBe(true);
+    simulate(s, 600);
+    expect(h.level).toBe(2);
+  });
+
+  it('works for other buildings without knocking them down', () => {
+    const s = blank();
+    mainRoad(s);
+    startUpgrade(s, hub(s).id);
+    simulate(s, 600);
+    const solar = built(s, 'solar', 52, 51);
+    expect(startUpgrade(s, solar.id).ok).toBe(true);
+    simulate(s, 6);
+    const stock = sum(s.stock);
+    const have = sum(solar.site!.have);
+    expect(cancelSite(s, solar.id).ok).toBe(true);
+    expect(s.buildings).toContain(solar);
+    expect(solar.level).toBe(1);
+    expect(sum(s.stock)).toBe(stock + have);
+  });
+
+  it('removes a new building that was still being built', () => {
+    const s = blank();
+    mainRoad(s);
+    const site = build(s, 'habitat', 56, 51);
+    expect(cancelSite(s, site.id).ok).toBe(true);
+    expect(s.buildings).not.toContain(site);
+    expect(cancelSite(s, hub(s).id).ok).toBe(false);
   });
 });
 
