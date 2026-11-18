@@ -71,8 +71,8 @@ export interface BuildingDef {
   recipe?: { in: Bag; out: Bag; sec: number[] };
   /** Gatherers: walk out to trees or rocks within the radius and bring back n goods a trip. */
   gather?: { node: 'tree' | 'rock'; good: Good; n: number; radius: number[]; sec: number[] };
-  /** Foresters: plant saplings within the radius. */
-  plant?: { radius: number[]; sec: number[]; maxTrees: number };
+  /** Foresters: plant `perTrip` saplings within the radius on each trip out. */
+  plant?: { radius: number[]; sec: number[]; maxTrees: number; perTrip: number };
   /** Must sit on this deposit (at least two footprint tiles). */
   deposit?: Terrain;
   powerGen?: number[];
@@ -201,7 +201,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   forester: {
     type: 'forester',
     name: 'Grove Keeper',
-    blurb: 'Plants lantern-tree saplings nearby so your woodcutters never run out.',
+    blurb: 'Plants three lantern-tree saplings each trip, enough to keep two Lumber Camps busy.',
     kind: 'forester',
     size: 2,
     unlock: 1,
@@ -212,7 +212,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
       { cost: { planks: 5, stone: 3, steel: 1 }, work: 45 },
     ],
     workers: 1,
-    plant: { radius: [6, 7, 8], sec: [4, 3, 2.5], maxTrees: 40 },
+    plant: { radius: [6, 7, 8], sec: [2.5, 2, 1.5], maxTrees: 40, perTrip: 3 },
   },
   icedrill: {
     type: 'icedrill',
