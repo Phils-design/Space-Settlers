@@ -18,6 +18,8 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+/* Stop iOS enlarging text when the phone turns to landscape. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--space); color: var(--ink); font-family: var(--f-body); -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
 #hud { position: fixed; inset: 0; pointer-events: none; }

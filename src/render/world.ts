@@ -28,7 +28,7 @@ import { byId, type Building, type GameState } from '../sim/state';
 import { territory } from '../sim/territory';
 import { CameraControls } from './controls';
 import { makeMaterials, type Materials } from './materials';
-import { MODELS, colonistModel, colonistParts, type ColonistParts, type ColonistRig } from './models';
+import { MODELS, colonistLook, colonistModel, colonistParts, toolModel, TOOL_GRIP, type ColonistParts, type ColonistRig, type ToolKind } from './models';
 
 /** World units per tile. */
 export const TILE = 2;
@@ -47,6 +47,8 @@ interface BuildingView {
 interface ColonistView extends ColonistRig {
   crate?: InstancedMesh;
   crateGood?: Good;
+  tool?: TransformNode;
+  toolKind?: ToolKind;
   lx: number;
   ly: number;
   phase: number;
@@ -133,7 +135,7 @@ export class World {
     this.groundTex = g.tex;
     this.props = this.buildProps();
     this.parts = colonistParts(scene, this.m);
-    for (const p of Object.values(this.parts)) this.shadows.addShadowCaster(p);
+    for (const p of Object.values(this.parts).flat()) this.shadows.addShadowCaster(p);
     for (const good of GOODS) {
       const mat = new StandardMaterial('crate-' + good, scene);
       const col = Color3.FromHexString(GOOD_INFO[good].color);
@@ -164,7 +166,29 @@ export class World {
     this.anchor.setEnabled(false);
 
     scene.onBeforeRenderObservable.add(() => this.animate());
-    window.addEventListener('resize', () => this.engine.resize());
+    this.followScreenSize();
+  }
+
+  /**
+   * Keeps the 3D view matched to the screen. Phones (iOS in particular) report a rotation before
+   * the new size has settled, so one resize on the 'resize' event can leave the picture squashed
+   * or stretched. We also watch the canvas itself and check again once the rotation has finished.
+   */
+  private followScreenSize() {
+    let timers: number[] = [];
+    // Babylon only reallocates when the size has actually changed, so calling this often is cheap.
+    const fit = () => this.engine.resize();
+    const settle = () => {
+      // Rotation can leave the page scrolled or zoomed; put it back where the game expects it.
+      window.scrollTo(0, 0);
+      fit();
+      timers.forEach(clearTimeout);
+      timers = [100, 300, 700].map((ms) => window.setTimeout(fit, ms));
+    };
+    window.addEventListener('resize', settle);
+    window.addEventListener('orientationchange', settle);
+    window.visualViewport?.addEventListener('resize', settle);
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(fit).observe(this.canvas);
   }
 
   // ---------- coordinates ----------
@@ -570,7 +594,7 @@ export class World {
       seen.add(c.id);
       let v = this.colonists.get(c.id);
       if (!v) {
-        const rig = colonistModel(this.scene, this.parts, c.id % 3 === 0);
+        const rig = colonistModel(this.scene, this.parts, colonistLook(c.id));
         rig.root.scaling.setAll(1.65);
         v = { ...rig, lx: c.x, ly: c.y, phase: (c.id * 1.7) % 6 };
         this.colonists.set(c.id, v);
@@ -601,21 +625,37 @@ export class World {
       } else if (harvesting && job.node >= 0) {
         v.root.rotation.y = -Math.atan2(Math.floor(job.node / s.size) + 0.5 - c.y, (job.node % s.size) + 0.5 - c.x);
       }
-      let bob = 0;
       // A slow, heavy stride: they're hauling a suit and life support.
       const stride = moving && !this.reduceMotion ? Math.sin(now / 160 + v.phase) : 0;
       const carrying = !!c.carry;
-      if (!this.reduceMotion) {
-        if (moving) bob = Math.abs(stride) * 0.05;
-        else if (building || harvesting) bob = Math.abs(Math.sin(now / 140 + v.phase)) * 0.12;
+      // Workers carry the tool for their job; it goes away while their hands are full.
+      const kind = carrying ? undefined : toolFor(s, c);
+      if (kind !== v.toolKind) {
+        v.tool?.dispose();
+        v.tool = undefined;
+        if (kind) {
+          const tool = toolModel(this.scene, this.parts, kind);
+          tool.parent = v.arms[1];
+          tool.position = new Vector3(0, -0.32, 0.02);
+          tool.rotation.z = TOOL_GRIP[kind];
+          v.tool = tool;
+        }
+        v.toolKind = kind;
       }
-      v.legs[0].rotation.z = stride * 0.55;
-      v.legs[1].rotation.z = -stride * 0.55;
-      // Arms swing opposite the legs, or reach forward to hold a crate or a tool.
-      const work = (building || harvesting) && !this.reduceMotion ? Math.sin(now / 140 + v.phase) * 0.5 : 0;
+      const working = building || harvesting;
+      const pose = working ? workPose(kind ?? 'hammer', this.reduceMotion ? 0.25 : ((now / 1000) / workPeriod(kind) + v.phase) % 1) : undefined;
+      let bob = 0;
+      if (!this.reduceMotion && moving) bob = Math.abs(stride) * 0.05;
+      v.legs[0].rotation.z = pose ? 0.12 : stride * 0.55;
+      v.legs[1].rotation.z = pose ? -0.12 : -stride * 0.55;
+      v.root.rotation.z = pose ? -pose.lean : 0;
+      if (pose) bob = -pose.dip;
+      // Arms swing opposite the legs, reach forward to hold a crate, or work the tool.
       for (const [k, arm] of v.arms.entries()) {
         const sign = k === 0 ? -1 : 1;
-        arm.rotation.z = carrying ? 1.2 : building || harvesting ? 1.0 + work : sign * stride * 0.45;
+        if (carrying) arm.rotation.z = 1.2;
+        else if (pose) arm.rotation.z = k === 1 ? pose.right : pose.left;
+        else arm.rotation.z = sign * stride * (kind && k === 1 ? 0.2 : 0.45);
       }
       v.root.position = this.toWorld(c.x + ox, c.y + oy, 0.1 + bob);
       const good = c.carry?.good;
@@ -710,5 +750,48 @@ export class World {
     const p = this.toWorld(tx, ty);
     this.camera.target.x = p.x;
     this.camera.target.z = p.z;
+  }
+}
+
+/** The tool a colonist carries for the job in hand, if any. */
+function toolFor(s: GameState, c: GameState['colonists'][number]): ToolKind | undefined {
+  const job = c.job;
+  if (job?.kind === 'build') return 'hammer';
+  if (job?.kind !== 'work' || job.stage === 'inside' || job.stage === 'go') return undefined;
+  const b = byId(s, job.at);
+  const d = b && BUILDINGS[b.type];
+  if (d?.plant) return 'spade';
+  if (d?.gather) return d.gather.node === 'tree' ? 'axe' : 'pick';
+  return undefined;
+}
+
+/** Seconds per stroke for each tool. */
+function workPeriod(kind?: ToolKind) {
+  return kind === 'hammer' ? 0.5 : kind === 'spade' ? 1.1 : 0.95;
+}
+
+const ease = (x: number) => x * x * (3 - 2 * x);
+
+/**
+ * Arm angles (forward from hanging down), forward lean and crouch for one moment of a work
+ * stroke, t from 0 to 1. Axes and picks wind up slowly overhead and come down hard; spades push
+ * into the ground and lever back; hammers tap quickly while the other hand steadies the work.
+ */
+export function workPose(kind: ToolKind, t: number) {
+  switch (kind) {
+    case 'axe':
+    case 'pick': {
+      const up = t < 0.65 ? ease(t / 0.65) : t < 0.8 ? 1 - ease((t - 0.65) / 0.15) : 0;
+      const right = 0.35 + up * 2.35;
+      return { right, left: right - 0.15, lean: 0.25 - up * 0.35, dip: t >= 0.78 && t < 0.9 ? 0.05 : 0 };
+    }
+    case 'spade': {
+      const push = t < 0.45 ? ease(t / 0.45) : t < 0.7 ? 1 : 1 - ease((t - 0.7) / 0.3);
+      return { right: 1.3 - push * 0.55, left: 1.15 - push * 0.45, lean: 0.15 + push * 0.3, dip: push * 0.06 };
+    }
+    case 'hammer': {
+      const up = t < 0.6 ? ease(t / 0.6) : 1 - ease((t - 0.6) / 0.4);
+      return { right: 0.7 + up * 1.3, left: 0.9, lean: 0.2, dip: 0 };
+    }
   }
 }
