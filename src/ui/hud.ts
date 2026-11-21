@@ -14,6 +14,7 @@ import {
   speedUpBlocker,
   speedUpCost,
   stats,
+  storageFullOf,
 } from '../sim/game';
 import { tileInfo } from '../sim/inspect';
 import { treesNear } from '../sim/jobs';
@@ -489,7 +490,7 @@ export class Hud {
       if (!connected(s, b)) issue = 'Needs road';
       else if (d.workers && b.paused) issue = 'Paused';
       else if (d.workers && b.worker == null) issue = 'No worker';
-      else if (d.workers && total(b.out) >= CONFIG.outCap) issue = 'Needs carriers';
+      else if (d.workers && total(b.out) >= CONFIG.outCap) issue = storageFullOf(s, b).length ? 'Storage full' : 'Needs carriers';
       else if (d.recipe && b.worker != null && b.progress <= 0 && entries(d.recipe.in).some(([g, v]) => get(b.inv, g) < v)) {
         const g = entries(d.recipe.in).find(([g2, v]) => get(b.inv, g2) < v)![0];
         issue = `Needs ${goodName(g)}`;
