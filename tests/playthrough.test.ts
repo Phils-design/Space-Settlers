@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { BUILDINGS, type BuildingType } from '../src/sim/config';
-import { bestSpot, placeBuilding, simulate, startUpgrade, stats } from '../src/sim/game';
+import { total } from '../src/sim/bag';
+import { BUILDABLE, BUILDINGS, CONFIG, type Bag, type BuildingType } from '../src/sim/config';
+import { bestSpot, countOf, maxCountOf, placeBuilding, simulate, speedUp, startUpgrade, stats } from '../src/sim/game';
 import { connectRoad } from '../src/sim/roads';
 import { createGame, hub, type GameState } from '../src/sim/state';
 
@@ -101,6 +102,60 @@ describe('play-through', () => {
     for (const seed of [2, 7, 42, 1234]) {
       const { ok, timeline } = play(seed);
       expect(ok, `seed ${seed}:\n${timeline.join('\n')}`).toBe(true);
+    }
+  }, 120_000);
+});
+
+/** A colony at the top end: Command Hub 3, every building allowed, all at level 3. Built instantly with crystals. */
+function fullColony(seed: number) {
+  const s = createGame(seed, 0);
+  const h = hub(s);
+  const near = { x: h.x + 1.5, y: h.y + 1.5 };
+  const materials: Bag = { planks: 100, stone: 100, steel: 100, lumenite: 100, ore: 100, circuits: 100 };
+  const finish = (id: number) => {
+    s.stock = { ...materials };
+    s.crystals = 1e6;
+    expect(speedUp(s, id)).toEqual({ ok: true });
+  };
+  for (let level = 2; level <= 3; level++) {
+    startUpgrade(s, h.id);
+    finish(h.id);
+  }
+  for (const type of BUILDABLE) {
+    while (countOf(s, type) < maxCountOf(s, type)) {
+      const spot = bestSpot(s, type, near);
+      if (!spot) break;
+      const r = placeBuilding(s, type, spot.x, spot.y);
+      expect(r.ok).toBe(true);
+      connectRoad(s, r.id!);
+      finish(r.id!);
+    }
+  }
+  for (const b of s.buildings) while (startUpgrade(s, b.id).ok) finish(b.id);
+  s.stock = { planks: 60, stone: 60 };
+  return s;
+}
+
+describe('late game', () => {
+  it('a full colony has carriers to spare, so workplaces rarely wait on them', () => {
+    for (const seed of [7, 1234]) {
+      const s = fullColony(seed);
+      expect(stats(s).popCap).toBe(70);
+      // Let the colonists arrive and the colony settle.
+      simulate(s, 360);
+      let free = 0;
+      let waiting = 0;
+      let samples = 0;
+      for (let t = 0; t < 240; t += 2) {
+        simulate(s, 2);
+        free += stats(s).free;
+        waiting += s.buildings.filter((b) => BUILDINGS[b.type].workers && total(b.out) >= CONFIG.outCap).length;
+        samples++;
+      }
+      console.log(`seed ${seed}: on average ${(free / samples).toFixed(1)} colonists free, ${(waiting / samples).toFixed(1)} workplaces waiting for carriers`);
+      expect(stats(s).colonists).toBe(70);
+      expect(free / samples, `seed ${seed}`).toBeGreaterThan(8);
+      expect(waiting / samples, `seed ${seed}`).toBeLessThan(2);
     }
   }, 120_000);
 });

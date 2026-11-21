@@ -1,4 +1,4 @@
-import { add, get, goodsOf, total } from './bag';
+import { add, entries, get, goodsOf, total } from './bag';
 import { BUILDINGS, CONFIG, OPEN, type Good } from './config';
 import { buildingDist, centre, distTo, routeTo, type Arrive } from './path';
 import { isStorage, lv, occupancy, stats } from './rules';
@@ -561,12 +561,16 @@ export function assignJobs(s: GameState) {
     setPath(got.c, got.path);
   }
 
-  /** Hauls of one good towards a building until it has what it needs or nobody is left. */
-  const supply = (b: Building, g: Good, missing: number, dest: HaulDest) => {
+  /**
+   * Hauls of one good towards a building until it has what it needs or nobody is left.
+   * With `fullLoads`, every trip brings as much as a carrier can hold, even if that's a little more
+   * than is missing, so a workplace using one good at a time doesn't send a carrier for every unit.
+   */
+  const supply = (b: Building, g: Good, missing: number, dest: HaulDest, fullLoads = false) => {
     while (missing > 0 && free.length) {
       const src = bestSource(s, g, b);
       if (!src) return;
-      const n = Math.min(CONFIG.carryMax, missing, src.avail);
+      const n = Math.min(CONFIG.carryMax, fullLoads ? Infinity : missing, src.avail);
       if (!haul(src, b, g, n, dest)) return;
       missing -= n;
     }
@@ -598,7 +602,7 @@ export function assignJobs(s: GameState) {
     if (!free.length) return;
     const d = BUILDINGS[b.type];
     if (!d.recipe || b.level < 1 || b.paused || b.worker == null) continue;
-    for (const g of goodsOf(d.recipe.in)) supply(b, g, get(d.recipe.in, g) * CONFIG.inCycles - get(b.inv, g) - get(b.incoming, g), 'input');
+    for (const g of goodsOf(d.recipe.in)) supply(b, g, get(d.recipe.in, g) * CONFIG.inCycles - get(b.inv, g) - get(b.incoming, g), 'input', true);
   }
 
   // 5. Finished goods to storage, fullest buildings first. Each good has its own storage limit.
@@ -612,15 +616,27 @@ export function assignJobs(s: GameState) {
     if (!free.length) return;
     const store = nearestStorageTo(s, b);
     if (!store) continue;
+    // While a workplace is still making more, wait for a full load rather than sending a carrier for one or two.
+    const making = stillMaking(s, b);
     for (const g of goodsOf(b.out)) {
       let avail = Math.floor(get(b.out, g) - get(b.outReserved, g));
       while (avail >= 1 && room(g) >= 1 && free.length) {
         const n = Math.min(CONFIG.carryMax, avail, Math.floor(room(g)));
+        if (making && n < Math.min(CONFIG.carryMax, Math.floor(room(g)))) break;
         if (!haul({ b, avail, store: false }, store, g, n, 'store')) break;
         avail -= n;
       }
     }
   }
+}
+
+/** Will this workplace add to its output soon? Then carriers can wait for a full load. */
+function stillMaking(s: GameState, b: Building): boolean {
+  if (b.paused || b.site || b.worker == null) return false;
+  const d = BUILDINGS[b.type];
+  if (d.gather) return findNode(s, b) >= 0;
+  if (!d.recipe) return false;
+  return b.progress > 0 || entries(d.recipe.in).every(([g, n]) => get(b.inv, g) + get(b.incoming, g) >= n);
 }
 
 /** Can one more colonist become a worker and still leave enough to build and carry? */

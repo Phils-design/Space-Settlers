@@ -16,6 +16,7 @@ This branch holds **phase 0**: a single-player prototype that runs in the browse
   - Building comes first, then deliveries to sites, then staffing workplaces, then everyday hauling.
   - Every workplace needs a colonist assigned to it, who walks there and works inside. If nobody is free, it waits.
   - The colony keeps some colonists back as carriers, so goods keep moving.
+  - Carriers move goods in full loads: workplaces are topped up three at a time, and finished goods are collected once there's a full load, unless the workplace has stopped making more.
 - 15 buildings with three levels each, unlocked across Command Hub levels 1 to 3, with more of each allowed as the Hub grows.
 - Roads that matter: free to lay, auto-routed around obstacles, and colonists walk faster on them. A building only works once a road links it to the Command Hub.
 - Power and housing limits, per-good storage, and a crystal speed-up that finishes a build once its materials are in storage.
