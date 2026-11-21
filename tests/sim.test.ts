@@ -329,6 +329,44 @@ describe('workers', () => {
   });
 });
 
+describe('carriers', () => {
+  it('top up a workplace with full loads, not one unit at a time', () => {
+    const s = blank();
+    mainRoad(s);
+    const mill = built(s, 'sawmill', 56, 51);
+    s.stock = { timber: 100 };
+    const loads = new Map<object, number>();
+    for (let t = 0; t < 180; t += 0.25) {
+      simulate(s, 0.25);
+      for (const c of s.colonists) if (c.job?.kind === 'haul' && c.job.dest === 'input' && c.job.to === mill.id) loads.set(c.job, c.job.n);
+    }
+    expect(s.made.planks ?? 0).toBeGreaterThan(20);
+    expect(loads.size).toBeGreaterThan(5);
+    expect([...new Set(loads.values())]).toEqual([CONFIG.carryMax]);
+  });
+
+  it('wait for a full load while a workplace is still making more', () => {
+    const s = blank();
+    noSpawning(s);
+    mainRoad(s);
+    const mill = built(s, 'sawmill', 56, 51);
+    s.stock = {};
+    simulate(s, 20);
+    expect(mill.worker).toBeDefined();
+    const pickups = () => s.colonists.filter((c) => c.job?.kind === 'haul' && c.job.from === mill.id && c.job.dest === 'store');
+    // Timber on hand, so more planks are on the way: two isn't worth a trip yet.
+    mill.inv = { timber: 3 };
+    mill.out = { planks: 2 };
+    assignJobs(s);
+    expect(pickups()).toHaveLength(0);
+    // Out of timber, so nothing more is coming: fetch what's there.
+    mill.inv = {};
+    assignJobs(s);
+    expect(pickups()).toHaveLength(1);
+    expect(pickups()[0].job).toMatchObject({ good: 'planks', n: 2 });
+  });
+});
+
 describe('speed-ups and upgrades', () => {
   it('crystals finish a build only when storage has the materials', () => {
     const s = blank();
