@@ -11,6 +11,7 @@ import {
   speedUpBlocker,
   startUpgrade,
   stats,
+  storageFullOf,
   togglePause,
 } from '../src/sim/game';
 import { assignJobs } from '../src/sim/jobs';
@@ -364,6 +365,24 @@ describe('carriers', () => {
     assignJobs(s);
     expect(pickups()).toHaveLength(1);
     expect(pickups()[0].job).toMatchObject({ good: 'planks', n: 2 });
+  });
+
+  it("aren't blamed when a workplace is stuck because storage is full", () => {
+    const s = blank();
+    noSpawning(s);
+    mainRoad(s);
+    const mill = built(s, 'sawmill', 56, 51);
+    s.stock = { timber: 20 };
+    simulate(s, 20);
+    mill.out = { planks: CONFIG.outCap };
+    expect(storageFullOf(s, mill)).toEqual([]);
+    expect(buildingStatus(s, mill).join()).toContain('waiting for carriers');
+    s.stock.planks = stats(s).storageCap;
+    expect(storageFullOf(s, mill)).toEqual(['planks']);
+    expect(buildingStatus(s, mill).join()).toContain('Storage is full of planks');
+    // And carriers really have nowhere to take them.
+    simulate(s, 20);
+    expect(mill.out.planks).toBeGreaterThanOrEqual(CONFIG.outCap);
   });
 });
 

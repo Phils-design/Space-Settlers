@@ -255,6 +255,14 @@ export function shortages(s: GameState, b: Building): Good[] {
     .map(([g]) => g);
 }
 
+/** Goods waiting at a building that storage has no room left for, so carriers won't take them. */
+export function storageFullOf(s: GameState, b: Building): Good[] {
+  const cap = stats(s).storageCap;
+  return entries(b.out)
+    .filter(([g]) => get(s.stock, g) + get(s.toStore, g) > cap - 1)
+    .map(([g]) => g);
+}
+
 export function buildingStatus(s: GameState, b: Building): string[] {
   const d = BUILDINGS[b.type];
   const out: string[] = [];
@@ -270,10 +278,10 @@ export function buildingStatus(s: GameState, b: Building): string[] {
     if (b.worker == null) out.push('No worker yet: waiting for a free colonist');
     if (d.powerUse && stats(s).powerRatio < 1) out.push(`Low power: running at ${Math.round(stats(s).powerRatio * 100)}% speed`);
     if (total(b.out) >= CONFIG.outCap) {
-      const full = entries(b.out).filter(([g]) => get(s.stock, g) >= stats(s).storageCap);
+      const full = storageFullOf(s, b);
       out.push(
         full.length
-          ? `Storage is full of ${full.map(([g]) => goodName(g)).join(' and ')}. Pause this, or build a Storage Depot`
+          ? `Storage is full of ${full.map(goodName).join(' and ')}. Pause this, or build a Storage Depot`
           : 'Output full: waiting for carriers. More colonists (Habitats) means more carriers',
       );
     }
